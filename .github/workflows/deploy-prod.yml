@@ -1,0 +1,56 @@
+name: Deploy Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag estavel para deploy em producao, ex: v1.2.3'
+        required: true
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar formato da tag estavel
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag invalida: '$TAG'. Producao aceita apenas tag estavel vX.Y.Z."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Garantir que a tag existe no repositorio
+        env:
+          TAG: ${{ inputs.tag }}
+        run: git rev-parse "${TAG}^{commit}" >/dev/null
+
+  approve:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - env:
+          TAG: ${{ inputs.tag }}
+        run: echo "Aprovacao recebida para deploy da tag ${TAG} em producao."
+
+  deploy:
+    needs: approve
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: prod
+      tag: ${{ inputs.tag }}
+      ref: ${{ inputs.tag }}
+    secrets: inherit

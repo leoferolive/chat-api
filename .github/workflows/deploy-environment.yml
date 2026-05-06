@@ -1,0 +1,188 @@
+name: Deploy to Environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Ambiente alvo: 'dev' ou 'prod'"
+        required: true
+        type: string
+      tag:
+        description: 'Tag da imagem Docker a deployar'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref (tag, SHA ou branch) para fazer checkout do codigo'
+        required: true
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      resolved_sha: ${{ steps.meta.outputs.resolved_sha }}
+      build_time: ${{ steps.meta.outputs.build_time }}
+      namespace: ${{ steps.meta.outputs.namespace }}
+      deployment: ${{ steps.meta.outputs.deployment }}
+      container: ${{ steps.meta.outputs.container }}
+      image_repository: ${{ steps.meta.outputs.image_repository }}
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+      smoke_host: ${{ steps.meta.outputs.smoke_host }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Resolve deploy metadata
+        id: meta
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ inputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          RESOLVED_SHA="$(git rev-parse HEAD)"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            NAMESPACE="chat-api"
+            DEPLOYMENT="chat-api"
+            CONTAINER="chat-api"
+            IMAGE_REPOSITORY="ghcr.io/${OWNER}/chat-api"
+            SMOKE_HOST="chat.leoferolive.com.br"
+          else
+            NAMESPACE="chat-api-dev"
+            DEPLOYMENT="chat-api-dev"
+            CONTAINER="chat-api-dev"
+            IMAGE_REPOSITORY="ghcr.io/${OWNER}/chat-api-dev"
+            SMOKE_HOST="chat-dev.leoferolive.com.br"
+          fi
+          IMAGE_URI="${IMAGE_REPOSITORY}:${TAG}"
+          {
+            echo "resolved_sha=$RESOLVED_SHA"
+            echo "build_time=$BUILD_TIME"
+            echo "namespace=$NAMESPACE"
+            echo "deployment=$DEPLOYMENT"
+            echo "container=$CONTAINER"
+            echo "image_repository=$IMAGE_REPOSITORY"
+            echo "image_uri=$IMAGE_URI"
+            echo "smoke_host=$SMOKE_HOST"
+          } >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_PAT || github.token }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ needs.prepare.outputs.image_repository }}:latest
+            ${{ needs.prepare.outputs.image_uri }}
+          labels: |
+            org.opencontainers.image.title=chat-api
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.tag }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.resolved_sha }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_time }}
+          cache-from: type=gha,scope=${{ inputs.environment }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.environment }}
+
+  deploy:
+    needs: [prepare, build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          args: --accept-routes --reset
+
+      - name: Configure KUBECONFIG
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Apply Kubernetes manifests
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          for f in ./k8s/"${ENVIRONMENT}"/*.yaml; do
+            case "$f" in
+              *secret.template.yaml) echo "skip $f" ;;
+              *) kubectl apply -f "$f" ;;
+            esac
+          done
+
+      - name: Update deployment image
+        env:
+          NAMESPACE: ${{ needs.prepare.outputs.namespace }}
+          DEPLOYMENT: ${{ needs.prepare.outputs.deployment }}
+          CONTAINER: ${{ needs.prepare.outputs.container }}
+          IMAGE_URI: ${{ needs.prepare.outputs.image_uri }}
+          TAG: ${{ inputs.tag }}
+          RESOLVED_SHA: ${{ needs.prepare.outputs.resolved_sha }}
+          BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
+        run: |
+          set -euo pipefail
+          kubectl set image "deployment/${DEPLOYMENT}" \
+            "${CONTAINER}=${IMAGE_URI}" \
+            -n "$NAMESPACE"
+          kubectl annotate "deployment/${DEPLOYMENT}" \
+            "deploy.chat-api/tag=${TAG}" \
+            "deploy.chat-api/sha=${RESOLVED_SHA}" \
+            "deploy.chat-api/build-time=${BUILD_TIME}" \
+            --overwrite -n "$NAMESPACE"
+
+      - name: Wait for rollout
+        env:
+          NAMESPACE: ${{ needs.prepare.outputs.namespace }}
+          DEPLOYMENT: ${{ needs.prepare.outputs.deployment }}
+        run: |
+          kubectl rollout status "deployment/${DEPLOYMENT}" \
+            -n "$NAMESPACE" --timeout=300s
+
+      - name: Smoke test /healthz
+        env:
+          SMOKE_HOST: ${{ needs.prepare.outputs.smoke_host }}
+        run: |
+          set -eu
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 "https://${SMOKE_HOST}/healthz" >/dev/null; then
+              echo "healthz OK"
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 5s"
+            sleep 5
+          done
+          echo "::error::healthz never returned 200 for ${SMOKE_HOST}"
+          exit 1

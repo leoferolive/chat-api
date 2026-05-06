@@ -1,0 +1,81 @@
+name: Deploy Branch to Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag ou SHA para deploy em dev'
+        required: true
+        default: 'main'
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  prepare-rc-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      rc_tag: ${{ steps.tag.outputs.rc_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Compute RC tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PAT || github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          LAST_STABLE="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v -- '-rc\.' | head -1 || true)"
+          [ -z "$LAST_STABLE" ] && LAST_STABLE="v0.0.0"
+          MAJOR=$(echo "$LAST_STABLE" | sed 's/v\([0-9]*\)\.[0-9]*\.[0-9]*/\1/')
+          MINOR=$(echo "$LAST_STABLE" | sed 's/v[0-9]*\.\([0-9]*\)\.[0-9]*/\1/')
+          PATCH=$(echo "$LAST_STABLE" | sed 's/v[0-9]*\.[0-9]*\.\([0-9]*\)/\1/')
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          RC_TAG="${NEXT}-rc.${SHORT_SHA}"
+          git tag "$RC_TAG"
+          git push origin "$RC_TAG"
+          echo "rc_tag=$RC_TAG" >> "$GITHUB_OUTPUT"
+
+  deploy-dev:
+    needs: prepare-rc-tag
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: dev
+      tag: ${{ needs.prepare-rc-tag.outputs.rc_tag }}
+      ref: ${{ needs.prepare-rc-tag.outputs.rc_tag }}
+    secrets: inherit
+
+  cleanup:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete old RC tags (keep last 10)
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PAT || github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          OLD_TAGS=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-rc.*' --sort=-v:refname | tail -n +11 || true)
+          for t in $OLD_TAGS; do
+            git tag -d "$t" || true
+            git push origin --delete "$t" || true
+          done

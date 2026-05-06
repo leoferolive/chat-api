@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  tag-and-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      stable_tag: ${{ steps.tag.outputs.stable_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Compute next stable tag
+        id: tag
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          LAST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v -- '-rc\.' | head -1 || true)"
+          [ -z "$LAST" ] && LAST="v0.0.0"
+          MAJOR=$(echo "$LAST" | sed 's/v\([0-9]*\)\.[0-9]*\.[0-9]*/\1/')
+          MINOR=$(echo "$LAST" | sed 's/v[0-9]*\.\([0-9]*\)\.[0-9]*/\1/')
+          PATCH=$(echo "$LAST" | sed 's/v[0-9]*\.[0-9]*\.\([0-9]*\)/\1/')
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          EXISTING="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+          if [ -n "$EXISTING" ]; then
+            echo "stable_tag=$EXISTING" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git tag "$NEXT"
+          git push origin "$NEXT"
+          echo "stable_tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PAT || github.token }}
+          STABLE_TAG: ${{ steps.tag.outputs.stable_tag }}
+        run: |
+          gh release create "$STABLE_TAG" \
+            --generate-notes \
+            --title "$STABLE_TAG" \
+            || echo "Release ja existe"
+
+  deploy-dev:
+    needs: tag-and-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: dev
+      tag: ${{ needs.tag-and-release.outputs.stable_tag }}
+      ref: ${{ needs.tag-and-release.outputs.stable_tag }}
+    secrets: inherit
