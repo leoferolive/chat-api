@@ -8,15 +8,15 @@ caller (we don't restart mid-stream).
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import litellm
+import structlog
 
 from .config import get_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _provider_kwargs(model: str) -> tuple[str, dict]:
@@ -82,12 +82,13 @@ async def stream_completion(
                 model=litellm_model,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **extra,
             )
         except Exception as exc:  # noqa: BLE001 — try next provider
-            logger.warning("llm_router: failed to open stream", extra={"model": model, "err": str(exc)})
+            logger.warning("llm_open_failed", model=model, err=str(exc))
             last_err = exc
             continue
 
@@ -112,13 +113,10 @@ async def stream_completion(
         except Exception as exc:  # noqa: BLE001
             if not first_chunk_ok:
                 # Treat early-stream failure as still recoverable.
-                logger.warning(
-                    "llm_router: stream errored before any token",
-                    extra={"model": model, "err": str(exc)},
-                )
+                logger.warning("llm_stream_open_errored", model=model, err=str(exc))
                 last_err = exc
                 continue
-            logger.error("llm_router: mid-stream failure", extra={"model": model, "err": str(exc)})
+            logger.error("llm_mid_stream_failure", model=model, err=str(exc))
             raise
 
         full_text = "".join(text_buf)

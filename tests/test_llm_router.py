@@ -61,6 +61,46 @@ async def test_no_providers_raises(mock_llm) -> None:
 
 
 @pytest.mark.asyncio
+async def test_usage_chunk_populates_prompt_tokens(mock_llm) -> None:
+    """The mock emits a final chunk with `usage`; we must surface it."""
+    events = []
+    async for ev in stream_completion(
+        [{"role": "user", "content": "hi"}],
+        ["mock/primary"],
+    ):
+        events.append(ev)
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["tokens"]["prompt"] == 12
+    assert done["tokens"]["completion"] == 7
+
+
+@pytest.mark.asyncio
+async def test_stream_options_include_usage_passed_to_litellm(
+    mock_llm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`stream_options={'include_usage': True}` must reach litellm.acompletion."""
+    from app import llm_router as llm_router_mod
+
+    captured: dict = {}
+
+    async def capturing(*, model, messages, stream, **kwargs):
+        captured["kwargs"] = kwargs
+
+        async def gen():
+            yield {"choices": [{"delta": {"content": "hi"}}]}
+
+        return gen()
+
+    monkeypatch.setattr(llm_router_mod.litellm, "acompletion", capturing)
+    async for _ev in stream_completion(
+        [{"role": "user", "content": "hi"}], ["mock/primary"]
+    ):
+        pass
+    assert captured["kwargs"].get("stream_options") == {"include_usage": True}
+
+
+@pytest.mark.asyncio
 async def test_zai_prefix_routes_to_openai_compatible(
     mock_llm, monkeypatch: pytest.MonkeyPatch
 ) -> None:
