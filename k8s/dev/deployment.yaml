@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-api-dev
+  namespace: chat-api-dev
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: chat-api-dev
+  template:
+    metadata:
+      labels:
+        app: chat-api-dev
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      volumes:
+        - name: wiki
+          persistentVolumeClaim:
+            claimName: chat-api-wiki
+        - name: db
+          persistentVolumeClaim:
+            claimName: chat-api-db
+      initContainers:
+        - name: wiki-clone
+          image: alpine/git:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              REPO="https://github.com/leoferolive/leoferolive-wiki.git"
+              if [ -d /wiki/.git ]; then
+                echo "[wiki-clone] existing repo, pulling latest"
+                cd /wiki && git pull --depth 1 --ff-only
+              else
+                echo "[wiki-clone] fresh clone"
+                rm -rf /wiki/* 2>/dev/null || true
+                git clone --depth 1 "$REPO" /tmp/wiki
+                cp -a /tmp/wiki/. /wiki/
+              fi
+              cd /wiki && git log -1 --oneline
+          volumeMounts:
+            - name: wiki
+              mountPath: /wiki
+      containers:
+        - name: chat-api-dev
+          image: ghcr.io/leoferolive/chat-api-dev:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: chat-api-config
+            - secretRef:
+                name: chat-api-secrets
+          volumeMounts:
+            - name: wiki
+              mountPath: /wiki
+              readOnly: true
+            - name: db
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 15
