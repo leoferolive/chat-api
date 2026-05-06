@@ -1,0 +1,21 @@
+services:
+  chat-api:
+    build: .
+    image: chat-api:dev
+    container_name: chat-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      WIKI_DIR: /wiki
+      DB_PATH: /data/chat.sqlite
+    volumes:
+      # Bind the local wiki-fixture for dev. Replace with the real wiki repo
+      # checkout when you want to test against production content.
+      - ./wiki-fixture:/wiki:ro
+      - chat-api-data:/data
+    restart: unless-stopped
+
+volumes:
+  chat-api-data:
