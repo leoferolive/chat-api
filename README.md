@@ -112,11 +112,108 @@ data: {"type":"error","message":"…"}
 SQLite at `DB_PATH`. Schema: `sessions`, `messages`, `daily_calls`. IPs
 are hashed with `IP_HASH_SALT` before storage.
 
-## Known follow-ups (Phase 4 — deploy is another agent)
+## Deploy
 
-- K3s manifests under `k8s/{prod,dev}/` (deployment, service, ingress).
-- PVC for `WIKI_DIR` populated by an init container that clones
-  `leoferolive/leoferolive-wiki`.
-- PVC for `DB_PATH`.
-- Cloudflare Tunnel ingress for `chat.leoferolive.com.br`.
-- GH Actions: build + push image, kustomize apply.
+K3s on a Raspberry Pi (same cluster as `leoferolive.com.br`). Cloudflare
+Tunnel terminates TLS and routes `*.leoferolive.com.br` to Traefik in the
+cluster, so the ingress stays plain HTTP.
+
+| Env | Host | Namespace | Deployment | Image |
+|-----|------|-----------|------------|-------|
+| prod | `chat.leoferolive.com.br` | `chat-api` | `chat-api` | `ghcr.io/leoferolive/chat-api` |
+| dev | `chat-dev.leoferolive.com.br` | `chat-api-dev` | `chat-api-dev` | `ghcr.io/leoferolive/chat-api-dev` |
+
+### Prerequisites
+
+- K3s cluster reachable from the GitHub Actions runner via Tailscale
+  (`TAILSCALE_AUTHKEY` secret) and a base64-encoded kubeconfig
+  (`KUBECONFIG` secret).
+- GHCR write permission (defaults to `GITHUB_TOKEN`; override via
+  `GHCR_PAT` if you need cross-repo pulls). Create
+  `ghcr-secret` in each namespace if the image repo is private.
+- Cloudflare Tunnel hostnames `chat.leoferolive.com.br` and
+  `chat-dev.leoferolive.com.br` already pointing at Traefik.
+- Public wiki repo at
+  `https://github.com/leoferolive/leoferolive-wiki` (init container clones
+  via HTTPS; needs no PAT while public).
+
+### First-time setup (per environment)
+
+```bash
+# 1. Create namespace + PVCs + ConfigMap + Service + Ingress
+kubectl apply -f k8s/dev/namespace.yaml
+kubectl apply -f k8s/dev/pvc.yaml
+kubectl apply -f k8s/dev/configmap.yaml
+kubectl apply -f k8s/dev/service.yaml
+kubectl apply -f k8s/dev/ingress.yaml
+
+# 2. Create the secret (NEVER commit real values)
+kubectl create secret generic chat-api-secrets \
+  --namespace chat-api-dev \
+  --from-literal=TURNSTILE_SECRET=... \
+  --from-literal=SESSION_SECRET=$(openssl rand -hex 32) \
+  --from-literal=IP_HASH_SALT=$(openssl rand -hex 16) \
+  --from-literal=GEMINI_API_KEY=... \
+  --from-literal=OPENROUTER_API_KEY=... \
+  --from-literal=ZAI_API_KEY=...
+
+# 3. Apply the deployment (image will be tracked by GH Actions afterwards)
+kubectl apply -f k8s/dev/deployment.yaml
+```
+
+For prod, swap `dev` for `prod` and `chat-api-dev` for `chat-api`.
+
+### Deploy via GitHub Actions
+
+- **dev (auto):** push to `main` → `ci` runs → `release.yml` cuts a stable
+  tag `vX.Y.Z` and triggers `deploy-environment.yml` for `dev`.
+- **dev (manual branch):** `gh workflow run deploy-branch-dev.yml -f ref=feat/foo`
+  cuts an RC tag `vX.Y.Z-rc.<sha>` and deploys it.
+- **prod:** `gh workflow run deploy-prod.yml -f tag=vX.Y.Z` (requires
+  `production` environment approval).
+
+Each deploy: builds an `arm64` image, pushes to GHCR, applies manifests
+(skipping `secret.template.yaml`), `kubectl set image` to the new tag,
+waits for rollout, then curls `/healthz` for a smoke test.
+
+### Manual deploy (no CI)
+
+```bash
+# Build for arm64 from another machine and push:
+docker buildx build --platform linux/arm64 \
+  -t ghcr.io/leoferolive/chat-api-dev:manual-$(git rev-parse --short HEAD) \
+  --push .
+
+# Then on a kubeconfig-aware host:
+kubectl -n chat-api-dev set image deployment/chat-api-dev \
+  chat-api-dev=ghcr.io/leoferolive/chat-api-dev:manual-<sha>
+kubectl -n chat-api-dev rollout status deployment/chat-api-dev
+```
+
+### Rotating a key
+
+```bash
+kubectl edit secret chat-api-secrets -n chat-api          # change the value
+kubectl rollout restart deployment/chat-api -n chat-api   # pick it up
+```
+
+### Logs
+
+```bash
+kubectl logs -n chat-api -l app=chat-api -f --tail=200
+kubectl logs -n chat-api -l app=chat-api -c wiki-clone    # init container
+```
+
+### Wiki updates
+
+The init container clones (or `git pull`s) `leoferolive-wiki` into the
+`chat-api-wiki` PVC each time the pod starts. To pick up new wiki
+content:
+
+```bash
+kubectl rollout restart deployment/chat-api -n chat-api
+```
+
+The running container also polls `index.md` every `WIKI_POLL_SECONDS`
+(default 60s) to invalidate its in-memory cache without a restart, but a
+restart is the only way to pull *new files* from git.
