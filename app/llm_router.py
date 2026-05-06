@@ -14,7 +14,28 @@ from dataclasses import dataclass
 
 import litellm
 
+from .config import get_settings
+
 logger = logging.getLogger(__name__)
+
+
+def _provider_kwargs(model: str) -> tuple[str, dict]:
+    """Translate `<prefix>/<model>` into LiteLLM call kwargs.
+
+    Most providers Just Work via their own prefix (`gemini/`, `openrouter/`).
+    For OpenAI-compatible endpoints we expose explicit prefixes that point
+    LiteLLM at the right base url + api key.
+
+    Returns the (model_string_passed_to_litellm, extra_kwargs).
+    """
+    settings = get_settings()
+    if model.startswith("zai/"):
+        bare = model[len("zai/") :]
+        return f"openai/{bare}", {
+            "api_base": settings.zai_base_url,
+            "api_key": settings.zai_api_key or "",
+        }
+    return model, {}
 
 
 @dataclass
@@ -55,13 +76,15 @@ async def stream_completion(
 
     for model in providers:
         attempts.append(model)
+        litellm_model, extra = _provider_kwargs(model)
         try:
             stream = await litellm.acompletion(
-                model=model,
+                model=litellm_model,
                 messages=messages,
                 stream=True,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001 — try next provider
             logger.warning("llm_router: failed to open stream", extra={"model": model, "err": str(exc)})

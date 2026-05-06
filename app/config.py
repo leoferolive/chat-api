@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None)
     openrouter_api_key: str | None = Field(default=None)
 
+    # Z.AI (Zhipu) — exposes an OpenAI-compatible endpoint, so we route it
+    # through LiteLLM's openai-compatible path with a custom api_base.
+    zai_api_key: str | None = Field(default=None)
+    zai_base_url: str = "https://api.z.ai/api/paas/v4/"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
