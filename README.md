@@ -197,6 +197,34 @@ kubectl edit secret chat-api-secrets -n chat-api          # change the value
 kubectl rollout restart deployment/chat-api -n chat-api   # pick it up
 ```
 
+### Session secret rotation (automatic)
+
+`SESSION_SECRET` rotates on a schedule via the `chat-api-rotate-session`
+CronJob (manifests in `k8s/{prod,dev}/`):
+
+- **prod:** every 90d (`0 3 1 */3 *` UTC — 03:00 on day 1 of every 3rd
+  month).
+- **dev:** weekly (`0 4 * * 1` UTC — Mondays at 04:00) to catch
+  regressions early.
+
+The job generates 64 hex chars from `/dev/urandom`, patches the
+`chat-api-secrets` Secret, then restarts the deployment so the new value
+is loaded. It runs with a dedicated `chat-api-rotator` ServiceAccount
+and a `Role` scoped (via `resourceNames`) to that one Secret and that
+one Deployment.
+
+To rotate immediately without waiting for the schedule:
+
+```bash
+kubectl create job --from=cronjob/chat-api-rotate-session \
+  manual-rotation-$(date +%s) -n chat-api      # or -n chat-api-dev
+```
+
+After a rotation, every previously issued `chat_session` JWT is
+invalid: any visitor with an active session has to pass Turnstile again
+on their next message. This is intentional — the whole point of
+rotation is to limit the blast radius of a leaked secret.
+
 ### Logs
 
 ```bash

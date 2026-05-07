@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chat-api-rotate-session
+  namespace: chat-api-dev
+spec:
+  # Weekly rotation in dev (Mondays 04:00 UTC) to surface regressions early.
+  schedule: "0 4 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: chat-api-rotator
+          restartPolicy: OnFailure
+          containers:
+            - name: rotator
+              # bitnami/kubectl:latest pinned by digest (2026-05-07).
+              # Bitnami no longer publishes versioned tags on Docker Hub;
+              # pin-by-digest gives reproducibility. Bump explicitly when
+              # a newer kubectl is needed.
+              image: bitnami/kubectl@sha256:13f055d594719a59102c67d2b0c57c92f74c7fc86a02fb2e18736999082e0848
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  if command -v xxd >/dev/null 2>&1; then
+                    NEW=$(head -c 32 /dev/urandom | xxd -p -c 64)
+                  else
+                    NEW=$(od -A n -t x1 -N 32 /dev/urandom | tr -d ' \n')
+                  fi
+                  if [ ${#NEW} -ne 64 ]; then
+                    echo "secret gen failed (len=${#NEW})"
+                    exit 1
+                  fi
+                  echo "rotating SESSION_SECRET in chat-api-secrets"
+                  kubectl patch secret chat-api-secrets \
+                    --type=merge \
+                    -p "{\"stringData\":{\"SESSION_SECRET\":\"$NEW\"}}"
+                  echo "restarting deployment/chat-api-dev to pick up new secret"
+                  kubectl rollout restart deployment/chat-api-dev
+                  # Poll via `kubectl get` (scoped by resourceNames in the
+                  # Role) instead of `kubectl rollout status`, which needs
+                  # cluster-wide list/watch on deployments.
+                  for i in $(seq 1 24); do
+                    READY=$(kubectl get deployment/chat-api-dev \
+                      -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+                    DESIRED=$(kubectl get deployment/chat-api-dev \
+                      -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 1)
+                    UPDATED=$(kubectl get deployment/chat-api-dev \
+                      -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || echo 0)
+                    OBSERVED=$(kubectl get deployment/chat-api-dev \
+                      -o jsonpath='{.status.observedGeneration}' 2>/dev/null || echo 0)
+                    GEN=$(kubectl get deployment/chat-api-dev \
+                      -o jsonpath='{.metadata.generation}' 2>/dev/null || echo 0)
+                    echo "rollout poll i=$i gen=$GEN observed=$OBSERVED desired=$DESIRED updated=$UPDATED ready=$READY"
+                    if [ "$OBSERVED" = "$GEN" ] && [ "$READY" = "$DESIRED" ] && [ "$UPDATED" = "$DESIRED" ]; then
+                      echo "rollout complete"
+                      break
+                    fi
+                    if [ "$i" = "24" ]; then
+                      echo "rollout did not converge within timeout"
+                      exit 1
+                    fi
+                    sleep 5
+                  done
+                  echo "rotation complete"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi

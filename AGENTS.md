@@ -136,6 +136,33 @@ Secrets do GitHub Actions (settings → secrets and variables → actions):
 - `GHCR_PAT` (opcional) — PAT com `write:packages` se o `GITHUB_TOKEN`
   default nao bastar
 
+## Session secret rotation
+
+`SESSION_SECRET` is rotated automatically by a `CronJob`
+(`chat-api-rotate-session`) in each namespace. Manifests live in
+`k8s/{prod,dev}/{sa,role,rolebinding,cronjob}-rotate-session.yaml`.
+
+- **Schedule:** prod every 90d (`0 3 1 */3 *` UTC, day 1 of every 3rd
+  month at 03:00); dev weekly (`0 4 * * 1` UTC, Mondays 04:00) so
+  regressions surface fast.
+- **What it does:** generates a fresh 64-char hex via `/dev/urandom`,
+  patches `chat-api-secrets` with `kubectl patch --type=merge`, then
+  `kubectl rollout restart deployment/chat-api[-dev]` and waits for
+  rollout (timeout 120s).
+- **Permissions:** dedicated `chat-api-rotator` ServiceAccount, with a
+  `Role` scoped via `resourceNames` to exactly the secret and deployment
+  for that namespace (no wildcard access).
+- **Rotate manually:**
+
+  ```bash
+  kubectl create job --from=cronjob/chat-api-rotate-session \
+    manual-rotation-$(date +%s) -n chat-api      # or chat-api-dev
+  ```
+
+- **Side effect:** every previously issued `chat_session` JWT becomes
+  invalid. Active visitors must pass Turnstile again on their next
+  message. Acceptable — this is the whole point.
+
 ## Definition of Done (Fase 4)
 
 - `kubectl apply -f k8s/dev/*.yaml` (exceto secret.template) sobe sem erro.

@@ -1,0 +1,18 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chat-api-rotator
+  namespace: chat-api-dev
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["chat-api-secrets"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["chat-api-dev"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/status"]
+    resourceNames: ["chat-api-dev"]
+    verbs: ["get"]
