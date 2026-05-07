@@ -15,7 +15,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock* ./
+# README is referenced from pyproject.toml; hatchling refuses to build the
+# project metadata without it, even when we only need third-party deps.
+COPY pyproject.toml uv.lock* README.md ./
 
 # Sync prod-only deps from the lockfile. If the lockfile is missing on a
 # first-time build, fall back to a fresh resolve.
