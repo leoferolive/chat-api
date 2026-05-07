@@ -8,10 +8,10 @@ data:
   ALLOWED_ORIGINS: "https://leoferolive.com.br"
   WIKI_DIR: "/wiki"
   DB_PATH: "/data/chat.sqlite"
-  # Until a real Turnstile widget is provisioned for the prod hostname,
-  # disable it. Re-enable by switching to "false" once TURNSTILE_SECRET
-  # and the site key are populated.
-  TURNSTILE_DISABLED: "true"
+  # Cloudflare Turnstile is now active in production. The real site key
+  # lives in the GH variable VITE_TURNSTILE_SITE_KEY (baked into the site
+  # bundle at build time) and the Secret in chat-api-secrets.TURNSTILE_SECRET.
+  TURNSTILE_DISABLED: "false"
   SESSION_TTL_SECONDS: "3600"
   RATE_LIMIT_PER_IP: "10/5minutes"
   DAILY_LLM_CALL_LIMIT: "500"
