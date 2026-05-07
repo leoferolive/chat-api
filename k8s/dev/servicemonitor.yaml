@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-api
+  namespace: chat-api-dev
+  labels:
+    app: chat-api
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: chat-api
+  namespaceSelector:
+    matchNames:
+      - chat-api-dev
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

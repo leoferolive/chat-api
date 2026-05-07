@@ -1,0 +1,119 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chat-api
+  namespace: chat-api
+  labels:
+    app: chat-api
+    release: kps
+spec:
+  groups:
+    - name: chat-api.cost
+      interval: 30s
+      rules:
+        - alert: ChatApiHighDailyTokens
+          expr: sum(increase(chat_api_tokens_total{namespace="chat-api"}[24h])) > 500000
+          for: 5m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: tokens/24h acima de 500k"
+            description: "Total nas últimas 24h: {{ $value | humanize }} tokens. Revisar dashboards."
+
+        - alert: ChatApiCriticalDailyTokens
+          expr: sum(increase(chat_api_tokens_total{namespace="chat-api"}[24h])) > 1000000
+          for: 5m
+          labels:
+            severity: critical
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: tokens/24h acima de 1M (crítico)"
+            description: "Total nas últimas 24h: {{ $value | humanize }} tokens. Custo de LLM elevado — investigar abuso ou aumentar limite."
+
+        - alert: ChatApiCostGateHit
+          expr: increase(chat_api_cost_gate_hits_total{namespace="chat-api"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: cost gate atingido"
+            description: "DAILY_LLM_CALL_LIMIT bloqueou requests nos últimos 5min ({{ $value | humanize }} bloqueios)."
+
+    - name: chat-api.abuse
+      interval: 30s
+      rules:
+        - alert: ChatApiHighChatRate
+          expr: sum(rate(chat_api_chats_total{namespace="chat-api"}[5m])) * 60 > 30
+          for: 5m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: > 30 chats/min sustentado"
+            description: "Taxa atual: {{ $value | humanize }} chats/min nos últimos 5min. Possível abuso."
+
+    - name: chat-api.health
+      interval: 30s
+      rules:
+        - alert: ChatApiHighErrorRate
+          expr: |
+            sum(rate(chat_api_chats_total{namespace="chat-api",status="error"}[5m]))
+              /
+            sum(rate(chat_api_chats_total{namespace="chat-api"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: > 5% de erros"
+            description: "Taxa de erro: {{ $value | humanizePercentage }} nos últimos 5min."
+
+        - alert: ChatApiAllProvidersFailing
+          expr: |
+            sum(rate(chat_api_provider_failures_total{namespace="chat-api"}[5m])) > 0
+              and
+            sum(rate(chat_api_chats_total{namespace="chat-api",status="ok"}[5m])) == 0
+          for: 5m
+          labels:
+            severity: critical
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: todos os providers de LLM caídos"
+            description: "Nenhum chat bem-sucedido nos últimos 5min e providers gerando falhas. Rotear tráfego ou investigar."
+
+        - alert: ChatApiHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace="chat-api"}[5m]))
+            ) > 10
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: latência p95 > 10s"
+            description: "p95: {{ $value | humanizeDuration }} nos últimos 5min."
+
+        - alert: ChatApiPodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="chat-api",condition="true"} == 0
+              and on(pod) kube_pod_labels{namespace="chat-api",label_app="chat-api"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: pod não-ready há 5min"
+            description: "Pod {{ $labels.pod }} sem readiness — verificar logs e healthz."
+
+        - alert: ChatApiPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="chat-api",container="chat-api"}[15m]) > 3
+          for: 0m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: pod restartando frequentemente"
+            description: "{{ $value | humanize }} restarts em 15min no pod {{ $labels.pod }}."

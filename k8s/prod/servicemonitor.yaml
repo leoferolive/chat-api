@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chat-api
+  namespace: chat-api
+  labels:
+    app: chat-api
+    # Required by kube-prometheus-stack's serviceMonitorSelector.
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: chat-api
+  namespaceSelector:
+    matchNames:
+      - chat-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

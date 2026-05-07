@@ -1,0 +1,181 @@
+# kube-prometheus-stack values — k3s single-node @ leo-ubuntu
+#
+# Install:
+#   helm install kps prometheus-community/kube-prometheus-stack \
+#     -n monitoring -f k8s/monitoring/values.yaml
+#
+# Upgrade:
+#   helm upgrade kps prometheus-community/kube-prometheus-stack \
+#     -n monitoring -f k8s/monitoring/values.yaml
+
+fullnameOverride: kps
+
+# k3s embeds these into the API server / kubelet — they don't expose
+# scrape targets, so disable to avoid permanently-down targets.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+
+# ---- Prometheus -----------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 8GiB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    # Pick up ServiceMonitor / PrometheusRule from any namespace as long as
+    # they carry our release label. This is what lets the chat-api
+    # ServiceMonitor (in ns chat-api) be discovered.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector:
+      matchLabels:
+        release: kps
+    ruleSelector:
+      matchLabels:
+        release: kps
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+# ---- AlertManager ---------------------------------------------------------
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+    # Mounts /etc/alertmanager/secrets/alertmanager-telegram/{bot_token}
+    secrets:
+      - alertmanager-telegram
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: telegram-warning
+      group_by: ["alertname", "namespace", "severity"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - matchers:
+            - severity = "critical"
+          receiver: telegram-critical
+          repeat_interval: 1h
+        - matchers:
+            - alertname =~ "Watchdog|InfoInhibitor"
+          receiver: "null"
+    receivers:
+      - name: "null"
+      - name: telegram-warning
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
+            # REPLACE_ME: chat_id from BotFather flow (see README.md).
+            # Use a negative integer for groups, positive for DMs.
+            chat_id: 0
+            parse_mode: HTML
+            send_resolved: true
+            message: |
+              ⚠️ <b>{{ .CommonLabels.alertname }}</b> ({{ .CommonLabels.severity }})
+              {{ range .Alerts }}
+              <b>{{ .Annotations.summary }}</b>
+              {{ .Annotations.description }}
+              {{ end }}
+      - name: telegram-critical
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
+            chat_id: 0
+            parse_mode: HTML
+            send_resolved: true
+            message: |
+              🚨 <b>{{ .CommonLabels.alertname }}</b> (CRITICAL)
+              {{ range .Alerts }}
+              <b>{{ .Annotations.summary }}</b>
+              {{ .Annotations.description }}
+              {{ end }}
+
+# ---- Grafana --------------------------------------------------------------
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsTimezone: America/Sao_Paulo
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+    hosts:
+      - grafana.leoferolive.com.br
+    path: /
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      provider:
+        allowUiUpdates: true
+    datasources:
+      enabled: true
+      searchNamespace: ALL
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---- node-exporter / kube-state-metrics defaults are fine ----------------
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
