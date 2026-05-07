@@ -79,7 +79,11 @@ Espelha o site (`leoferolive.com.br`). Decisoes:
 - **Wiki:** PVC `chat-api-wiki` (5Gi). Init container `wiki-clone` (imagem
   `alpine/git`) faz `git clone --depth 1` no primeiro start e
   `git pull --depth 1 --ff-only` em starts subsequentes. Repositorio
-  publico em `https://github.com/leoferolive/leoferolive-wiki`.
+  publico em `https://github.com/leoferolive/leoferolive-wiki`. O clone
+  espelha o repo *inteiro* dentro do volume (`WIKI_DIR=/wiki`), entao
+  `index.md` e as paginas vivem em `/wiki/wiki/` (ao lado de `AGENTS.md`,
+  `README.md`, `raw/` etc., que NAO sao paginas). O `wiki_loader` detecta
+  esse layout e escopa a leitura para `<WIKI_DIR>/wiki/` automaticamente.
 - **DB:** PVC `chat-api-db` (1Gi). Mounta em `/data`. Sem backup
   automatizado por enquanto (TODO em Fase 5).
 - **Recursos:** 100m/256Mi requests, 500m/512Mi limits. 1 replica

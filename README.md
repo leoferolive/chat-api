@@ -207,8 +207,15 @@ kubectl logs -n chat-api -l app=chat-api -c wiki-clone    # init container
 ### Wiki updates
 
 The init container clones (or `git pull`s) `leoferolive-wiki` into the
-`chat-api-wiki` PVC each time the pod starts. To pick up new wiki
-content:
+`chat-api-wiki` PVC each time the pod starts. The clone mirrors the full
+repo inside the volume, so the actual wiki pages live one level below the
+mount point — `WIKI_DIR=/wiki`, but `index.md` and the page tree are at
+`/wiki/wiki/`, alongside repo-level files (`AGENTS.md`, `README.md`,
+`raw/`, …) that are **not** wiki pages. The loader auto-detects this
+layout and scopes reading to `<WIKI_DIR>/wiki/`, so noise files outside
+that subtree never reach the retriever.
+
+To pick up new wiki content:
 
 ```bash
 kubectl rollout restart deployment/chat-api -n chat-api

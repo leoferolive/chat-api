@@ -24,17 +24,41 @@ WIKI_PAGES = {
     "skills/backend.md": "# Backend Skills\n\nJava, Spring, Python, FastAPI.",
 }
 
+# Noise files that exist *outside* the wiki/ subtree. In production the
+# init container clones the full ``leoferolive-wiki`` repo into the volume,
+# so files like ``AGENTS.md`` and ``raw/README.md`` end up next to the
+# real wiki root. They must NEVER be considered wiki pages.
+WIKI_NOISE_FILES = {
+    "AGENTS.md": "# AGENTS\n\nRepo metadata, not a wiki page.",
+    "README.md": "# leoferolive-wiki\n\nRepo readme, not a wiki page.",
+    "raw/README.md": "# raw ingest\n\nScratchpad for ingestion, not a wiki page.",
+}
+
 
 @pytest.fixture
 def temp_wiki(tmp_path: Path) -> Path:
-    wiki = tmp_path / "wiki"
+    """Mirror the production volume layout.
+
+    ``WIKI_DIR`` points at a directory that contains the *whole* repo
+    (because the init container clones it as-is). The actual wiki lives
+    under ``<WIKI_DIR>/wiki/``; everything else at the root is noise.
+    """
+    repo = tmp_path / "wiki"  # acts as WIKI_DIR
+    repo.mkdir()
+    # Noise outside the wiki subtree.
+    for rel, content in WIKI_NOISE_FILES.items():
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    # The real wiki, nested one level deep.
+    wiki = repo / "wiki"
     wiki.mkdir()
     (wiki / "index.md").write_text(WIKI_FIXTURE_INDEX, encoding="utf-8")
     for rel, content in WIKI_PAGES.items():
         target = wiki / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-    return wiki
+    return repo
 
 
 @pytest.fixture
