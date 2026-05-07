@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any
 
 import httpx
+import structlog
 from fastapi import HTTPException, Request
 from jose import JWTError, jwt
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from .config import Settings
-
-import structlog
 
 logger = structlog.get_logger(__name__)
 
