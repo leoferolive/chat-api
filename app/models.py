@@ -35,6 +35,14 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=_max_messages())
     lang: Literal["pt", "en"] = "pt"
     turnstileToken: str | None = Field(default=None, max_length=4096)
+    # Optional self-declared display name. Trimmed/normalised server-side
+    # before persistence; the Prometheus label is derived (hashed) so the
+    # raw value never reaches the metric.
+    userName: str | None = Field(
+        default=None,
+        max_length=40,
+        pattern=r"^[\w \-'.À-ɏ]+$",
+    )
 
 
 class ChatTokenChunk(BaseModel):

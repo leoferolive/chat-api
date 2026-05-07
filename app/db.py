@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     ip_hash TEXT,
     lang TEXT,
+    user_name TEXT,
     created_at INTEGER
 );
 
@@ -69,7 +70,18 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self.db_path)
         await self._conn.executescript(_SCHEMA)
+        await self._migrate_add_user_name()
         await self._conn.commit()
+
+    async def _migrate_add_user_name(self) -> None:
+        # In-place migration: bases criadas antes desta feature não têm a
+        # coluna. CREATE TABLE IF NOT EXISTS é no-op se a tabela existe, então
+        # precisamos inspecionar PRAGMA e adicionar a coluna manualmente.
+        assert self._conn is not None
+        async with self._conn.execute("PRAGMA table_info(sessions)") as cur:
+            cols = {row[1] async for row in cur}
+        if "user_name" not in cols:
+            await self._conn.execute("ALTER TABLE sessions ADD COLUMN user_name TEXT")
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -78,15 +90,23 @@ class Database:
 
     # --- API ------------------------------------------------------------
 
-    async def upsert_session(self, session_id: str, ip_hash: str, lang: str) -> None:
+    async def upsert_session(
+        self,
+        session_id: str,
+        ip_hash: str,
+        lang: str,
+        user_name: str | None = None,
+    ) -> None:
         assert self._conn is not None
         await self._conn.execute(
             """
-            INSERT INTO sessions(id, ip_hash, lang, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET lang=excluded.lang
+            INSERT INTO sessions(id, ip_hash, lang, user_name, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                lang=excluded.lang,
+                user_name=COALESCE(excluded.user_name, sessions.user_name)
             """,
-            (session_id, ip_hash, lang, _now_ts()),
+            (session_id, ip_hash, lang, user_name, _now_ts()),
         )
         await self._conn.commit()
 

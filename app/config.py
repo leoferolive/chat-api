@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 3600
 
     ip_hash_salt: str = "dev-ip-salt"
+    # Separate salt so rotating the user-label bucket doesn't invalidate
+    # IP-based rate limits.
+    user_hash_salt: str = "dev-user-salt"
 
     rate_limit_per_ip: str = "10/5minutes"
     daily_llm_call_limit: int = 500

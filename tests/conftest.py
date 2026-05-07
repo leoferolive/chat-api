@@ -78,6 +78,7 @@ def settings(temp_wiki: Path, temp_db_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("DAILY_LLM_CALL_LIMIT", "500")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("IP_HASH_SALT", "test-salt")
+    monkeypatch.setenv("USER_HASH_SALT", "test-user-salt")
     monkeypatch.setenv("WIKI_POLL_SECONDS", "0")
     config_mod.reset_settings_cache()
     s = config_mod.get_settings()
