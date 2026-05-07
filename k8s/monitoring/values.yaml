@@ -105,28 +105,29 @@ alertmanager:
           receiver: "null"
     receivers:
       - name: "null"
+      # Plain-text messages — descriptions in our PrometheusRule contain
+      # raw "<", ">" and "%" chars. With parse_mode set, Telegram refuses
+      # the message. Plain text avoids escape gymnastics entirely.
       - name: telegram-warning
         telegram_configs:
           - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
             chat_id: 475333823
-            parse_mode: HTML
             send_resolved: true
             message: |
-              ⚠️ <b>{{ .CommonLabels.alertname }}</b> ({{ .CommonLabels.severity }})
+              ⚠️ {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})
               {{ range .Alerts }}
-              <b>{{ .Annotations.summary }}</b>
+              {{ .Annotations.summary }}
               {{ .Annotations.description }}
               {{ end }}
       - name: telegram-critical
         telegram_configs:
           - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
             chat_id: 475333823
-            parse_mode: HTML
             send_resolved: true
             message: |
-              🚨 <b>{{ .CommonLabels.alertname }}</b> (CRITICAL)
+              🚨 {{ .CommonLabels.alertname }} (CRITICAL)
               {{ range .Alerts }}
-              <b>{{ .Annotations.summary }}</b>
+              {{ .Annotations.summary }}
               {{ .Annotations.description }}
               {{ end }}
 

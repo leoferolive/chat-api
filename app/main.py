@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -61,6 +62,18 @@ def _configure_logging() -> None:
 log = structlog.get_logger("chat-api")
 
 
+def _is_internal_host(host_header: str) -> bool:
+    """True if Host is an IP literal or localhost — i.e. an in-cluster scrape."""
+    host = host_header.split(":", 1)[0].strip().lower()
+    if host in {"localhost", ""}:
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -95,8 +108,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.limiter = limiter
 
     def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+        # Only the /chat/stream route has @limiter.limit applied, so this
+        # handler also fires only for that path. We track the hit on the
+        # dedicated counter; chats_total stays a clean count of streams.
         RATE_LIMIT_HITS_TOTAL.inc()
-        CHATS_TOTAL.labels(status="rate_limited", model=UNKNOWN_MODEL).inc()
         return _rate_limit_exceeded_handler(request, exc)
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
@@ -114,7 +129,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/metrics")
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        # The Service is also reachable via Ingress on the public host. Refuse
+        # /metrics for any Host that doesn't look like a Pod IP — Prometheus
+        # scrapes via Pod IP (10.42.x.x), public clients always see a domain.
+        if not _is_internal_host(request.headers.get("host", "")):
+            return Response(status_code=404)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/chat/stream")
@@ -156,11 +176,10 @@ async def _handle_chat_stream(
         await cost_gate_check(db, settings.daily_llm_call_limit)
     except CostGateExceeded as exc:
         gate_msg = str(exc)
+        # Don't observe chat_duration here — the request never streamed,
+        # near-zero observations would skew the latency p95/p99 panels.
         COST_GATE_HITS_TOTAL.inc()
         CHATS_TOTAL.labels(status="cost_gate", model=UNKNOWN_MODEL).inc()
-        CHAT_DURATION_SECONDS.labels(model=UNKNOWN_MODEL, status="cost_gate").observe(
-            time.monotonic() - started
-        )
 
         async def gate_gen():
             yield {"data": sse_payload({"type": "error", "message": gate_msg})}

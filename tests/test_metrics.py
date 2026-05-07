@@ -28,8 +28,15 @@ def metric_value(body: str, name: str, labels: dict[str, str] | None = None) -> 
 
 
 @pytest.mark.asyncio
+async def test_metrics_blocked_for_external_host(client) -> None:
+    """Public Ingress would forward Host=chat-dev.leoferolive.com.br — must 404."""
+    resp = await client.get("/metrics", headers={"host": "chat-dev.leoferolive.com.br"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_metrics_endpoint_exposes_chat_api_metrics(client) -> None:
-    resp = await client.get("/metrics")
+    resp = await client.get("/metrics", headers={"host": "127.0.0.1"})
     assert resp.status_code == 200
     body = resp.text
     assert "# HELP chat_api_chats_total" in body
@@ -40,7 +47,7 @@ async def test_metrics_endpoint_exposes_chat_api_metrics(client) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_increment_on_successful_chat(client, mock_llm) -> None:
-    before_body = (await client.get("/metrics")).text
+    before_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
     chats_before = metric_value(
         before_body,
         "chat_api_chats_total",
@@ -60,7 +67,7 @@ async def test_metrics_increment_on_successful_chat(client, mock_llm) -> None:
     resp = await client.post("/chat/stream", json=body)
     assert resp.status_code == 200
 
-    after_body = (await client.get("/metrics")).text
+    after_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
     chats_after = metric_value(
         after_body,
         "chat_api_chats_total",
@@ -90,7 +97,7 @@ async def test_metrics_cost_gate_counter(client) -> None:
     settings = client.app.state.settings  # type: ignore[attr-defined]
 
     before = metric_value(
-        (await client.get("/metrics")).text, "chat_api_cost_gate_hits_total"
+        (await client.get("/metrics", headers={"host": "127.0.0.1"})).text, "chat_api_cost_gate_hits_total"
     )
     for _ in range(settings.daily_llm_call_limit):
         await db.increment_calls_today()
@@ -103,7 +110,7 @@ async def test_metrics_cost_gate_counter(client) -> None:
     resp = await client.post("/chat/stream", json=body)
     assert resp.status_code == 503
 
-    after_body = (await client.get("/metrics")).text
+    after_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
     after = metric_value(after_body, "chat_api_cost_gate_hits_total")
     assert after - before >= 1.0
     # Gauge reflects current daily_calls
@@ -115,7 +122,7 @@ async def test_metrics_cost_gate_counter(client) -> None:
 async def test_metrics_provider_failure_then_fallback(client, mock_llm) -> None:
     mock_llm.behaviour["mock/primary"] = "raise_open"
     before = metric_value(
-        (await client.get("/metrics")).text,
+        (await client.get("/metrics", headers={"host": "127.0.0.1"})).text,
         "chat_api_provider_failures_total",
         {"model": "mock/primary", "phase": "open"},
     )
@@ -128,7 +135,7 @@ async def test_metrics_provider_failure_then_fallback(client, mock_llm) -> None:
     resp = await client.post("/chat/stream", json=body)
     assert resp.status_code == 200  # secondary picked up
 
-    after_body = (await client.get("/metrics")).text
+    after_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
     after = metric_value(
         after_body,
         "chat_api_provider_failures_total",

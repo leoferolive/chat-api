@@ -4,7 +4,7 @@ metadata:
   name: chat-api
   namespace: chat-api-dev
   labels:
-    app: chat-api
+    app: chat-api-dev
     release: kps
 spec:
   # Thresholds reduzidos vs prod — dev recebe pouco tráfego, então
@@ -37,10 +37,14 @@ spec:
       interval: 30s
       rules:
         - alert: ChatApiAllProvidersFailing
+          # Guard with traffic > 0.01/s so an idle dev window doesn't fire critical
+          # on a single transient failure.
           expr: |
             sum(rate(chat_api_provider_failures_total{namespace="chat-api-dev"}[5m])) > 0
               and
             sum(rate(chat_api_chats_total{namespace="chat-api-dev",status="ok"}[5m])) == 0
+              and
+            sum(rate(chat_api_chats_total{namespace="chat-api-dev"}[5m])) > 0.01
           for: 5m
           labels:
             severity: critical
@@ -50,7 +54,8 @@ spec:
             description: "Nenhum chat ok há 5min e providers gerando falhas."
 
         - alert: ChatApiPodRestarting
-          expr: increase(kube_pod_container_status_restarts_total{namespace="chat-api-dev",container="chat-api"}[15m]) > 3
+          # Container name in dev is "chat-api-dev" (matches the deployment).
+          expr: increase(kube_pod_container_status_restarts_total{namespace="chat-api-dev",container="chat-api-dev"}[15m]) > 3
           for: 0m
           labels:
             severity: warning

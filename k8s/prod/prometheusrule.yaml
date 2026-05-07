@@ -71,10 +71,14 @@ spec:
             description: "Taxa de erro: {{ $value | humanizePercentage }} nos últimos 5min."
 
         - alert: ChatApiAllProvidersFailing
+          # Guard with traffic > 0.01/s so an idle window (no chats at all) doesn't
+          # let a single transient open-failure flip the alert to critical.
           expr: |
             sum(rate(chat_api_provider_failures_total{namespace="chat-api"}[5m])) > 0
               and
             sum(rate(chat_api_chats_total{namespace="chat-api",status="ok"}[5m])) == 0
+              and
+            sum(rate(chat_api_chats_total{namespace="chat-api"}[5m])) > 0.01
           for: 5m
           labels:
             severity: critical
@@ -97,9 +101,12 @@ spec:
             description: "p95: {{ $value | humanizeDuration }} nos últimos 5min."
 
         - alert: ChatApiPodNotReady
+          # `on(namespace, pod)` is required — `on(pod)` alone matches pods of
+          # the same name in other namespaces and produces a many-to-many error.
           expr: |
             kube_pod_status_ready{namespace="chat-api",condition="true"} == 0
-              and on(pod) kube_pod_labels{namespace="chat-api",label_app="chat-api"} == 1
+              and on(namespace, pod)
+            kube_pod_labels{namespace="chat-api",label_app="chat-api"} == 1
           for: 5m
           labels:
             severity: critical
