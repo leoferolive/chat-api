@@ -4,12 +4,12 @@ metadata:
   name: chat-api
   namespace: chat-api-dev
   labels:
-    app: chat-api
+    app: chat-api-dev
     release: kps
 spec:
   selector:
     matchLabels:
-      app: chat-api
+      app: chat-api-dev
   namespaceSelector:
     matchNames:
       - chat-api-dev

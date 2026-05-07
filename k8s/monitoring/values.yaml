@@ -108,9 +108,7 @@ alertmanager:
       - name: telegram-warning
         telegram_configs:
           - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
-            # REPLACE_ME: chat_id from BotFather flow (see README.md).
-            # Use a negative integer for groups, positive for DMs.
-            chat_id: 0
+            chat_id: 475333823
             parse_mode: HTML
             send_resolved: true
             message: |
@@ -122,7 +120,7 @@ alertmanager:
       - name: telegram-critical
         telegram_configs:
           - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
-            chat_id: 0
+            chat_id: 475333823
             parse_mode: HTML
             send_resolved: true
             message: |
