@@ -42,7 +42,7 @@ from .models import ChatRequest
 from .prompt import build_messages
 from .retriever import Retriever
 from .sse import build_response, sse_payload
-from .user_identity import normalize_user_label, sanitize_user_name
+from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name
 from .wiki_loader import WikiLoader
 
 
@@ -162,7 +162,9 @@ async def _handle_chat_stream(
     ip = client_ip(request)
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
     user_raw = sanitize_user_name(body.userName)
-    user_label = normalize_user_label(body.userName, salt=settings.user_hash_salt)
+    user_label = cap_user_label(
+        normalize_user_label(body.userName, salt=settings.user_hash_salt)
+    )
 
     # Turnstile / session enforcement BEFORE we touch the LLM.
     turnstile_ok = await verify_turnstile(body.turnstileToken, settings, remote_ip=ip)
