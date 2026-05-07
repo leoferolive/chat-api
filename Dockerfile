@@ -9,14 +9,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
-# uv from the official distroless image
-COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
+# uv from the official distroless image — pin to the same major.minor as
+# the version that produced uv.lock (revision = 3 ⇒ uv 0.10+). Older tags
+# reject the newer lockfile format.
+COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /usr/local/bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 
-# Sync prod-only deps. uv.lock may not exist on first build → also try without --frozen.
-RUN uv sync --no-dev --frozen 2>/dev/null || uv sync --no-dev
+# Sync prod-only deps from the lockfile. If the lockfile is missing on a
+# first-time build, fall back to a fresh resolve.
+RUN uv sync --no-dev --frozen || uv sync --no-dev
 
 COPY app ./app
 
