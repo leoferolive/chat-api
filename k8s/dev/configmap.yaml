@@ -5,14 +5,15 @@ metadata:
   namespace: chat-api-dev
 data:
   ENV: "dev"
-  ALLOWED_ORIGINS: "https://leoferolive-dev.com.br,http://localhost:5173"
+  ALLOWED_ORIGINS: "https://leoferolive.com.br,https://leoferolive-dev.com.br,http://localhost:5173"
   WIKI_DIR: "/wiki"
   DB_PATH: "/data/chat.sqlite"
-  TURNSTILE_DISABLED: "false"
+  # Dev runs without Turnstile until a real site key is provisioned.
+  TURNSTILE_DISABLED: "true"
   SESSION_TTL_SECONDS: "3600"
   RATE_LIMIT_PER_IP: "30/5minutes"
   DAILY_LLM_CALL_LIMIT: "200"
-  LLM_PROVIDERS: "gemini/gemini-2.5-flash,openrouter/anthropic/claude-haiku-4.5,zai/glm-4.7-flash"
-  ZAI_BASE_URL: "https://api.z.ai/api/paas/v4/"
+  LLM_PROVIDERS: "gemini/gemini-2.5-flash,openrouter/deepseek/deepseek-v4-flash,openrouter/google/gemini-2.5-flash-lite"
+  ZAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4/"
   RETRIEVER_TOP_N: "5"
   WIKI_POLL_SECONDS: "60"
