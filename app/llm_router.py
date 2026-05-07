@@ -15,6 +15,11 @@ import litellm
 import structlog
 
 from .config import get_settings
+from .metrics import (
+    PROVIDER_ATTEMPTS_TOTAL,
+    PROVIDER_FAILURES_TOTAL,
+    TOKENS_TOTAL,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +94,8 @@ async def stream_completion(
             )
         except Exception as exc:  # noqa: BLE001 — try next provider
             logger.warning("llm_open_failed", model=model, err=str(exc))
+            PROVIDER_FAILURES_TOTAL.labels(model=model, phase="open").inc()
+            PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
             last_err = exc
             continue
 
@@ -114,15 +121,24 @@ async def stream_completion(
             if not first_chunk_ok:
                 # Treat early-stream failure as still recoverable.
                 logger.warning("llm_stream_open_errored", model=model, err=str(exc))
+                PROVIDER_FAILURES_TOTAL.labels(model=model, phase="early").inc()
+                PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
                 last_err = exc
                 continue
             logger.error("llm_mid_stream_failure", model=model, err=str(exc))
+            PROVIDER_FAILURES_TOTAL.labels(model=model, phase="mid").inc()
+            PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
             raise
 
         full_text = "".join(text_buf)
         if not completion_tokens:
             # Rough estimate when provider doesn't return usage.
             completion_tokens = max(1, len(full_text.split()))
+        PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="success").inc()
+        if prompt_tokens:
+            TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
+        if completion_tokens:
+            TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
         yield {
             "type": "done",
             "model": model,

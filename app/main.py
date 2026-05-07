@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -27,6 +28,15 @@ from .guards import (
     verify_turnstile,
 )
 from .llm_router import AllProvidersFailed, stream_completion
+from .metrics import (
+    CHAT_DURATION_SECONDS,
+    CHATS_TOTAL,
+    COST_GATE_HITS_TOTAL,
+    DAILY_CALLS,
+    RATE_LIMIT_HITS_TOTAL,
+    UNKNOWN_MODEL,
+    set_info,
+)
 from .models import ChatRequest
 from .prompt import build_messages
 from .retriever import Retriever
@@ -66,6 +76,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.retriever = retriever
     app.state.db = db
 
+    DAILY_CALLS.set(await db.count_calls_today())
+    set_info(version=app.version, env=settings.env)
+
     log.info("startup", env=settings.env, wiki_dir=str(settings.wiki_dir))
     try:
         yield
@@ -80,7 +93,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     limiter = build_limiter(settings.rate_limit_per_ip)
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+        RATE_LIMIT_HITS_TOTAL.inc()
+        CHATS_TOTAL.labels(status="rate_limited", model=UNKNOWN_MODEL).inc()
+        return _rate_limit_exceeded_handler(request, exc)
+
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     app.add_middleware(
         CORSMiddleware,
@@ -93,6 +112,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/chat/stream")
     @limiter.limit(settings.rate_limit_per_ip)
@@ -133,6 +156,11 @@ async def _handle_chat_stream(
         await cost_gate_check(db, settings.daily_llm_call_limit)
     except CostGateExceeded as exc:
         gate_msg = str(exc)
+        COST_GATE_HITS_TOTAL.inc()
+        CHATS_TOTAL.labels(status="cost_gate", model=UNKNOWN_MODEL).inc()
+        CHAT_DURATION_SECONDS.labels(model=UNKNOWN_MODEL, status="cost_gate").observe(
+            time.monotonic() - started
+        )
 
         async def gate_gen():
             yield {"data": sse_payload({"type": "error", "message": gate_msg})}
@@ -191,14 +219,27 @@ async def _handle_chat_stream(
                     }
         except AllProvidersFailed as exc:
             log.error("all_providers_failed", err=str(exc), session=body.sessionId)
+            CHATS_TOTAL.labels(status="error", model=model_used or UNKNOWN_MODEL).inc()
+            CHAT_DURATION_SECONDS.labels(
+                model=model_used or UNKNOWN_MODEL, status="error"
+            ).observe(time.monotonic() - started)
             yield {"data": sse_payload({"type": "error", "message": "all_providers_failed"})}
             return
         except Exception as exc:  # noqa: BLE001
             log.exception("stream_failed", err=str(exc), session=body.sessionId)
+            CHATS_TOTAL.labels(status="error", model=model_used or UNKNOWN_MODEL).inc()
+            CHAT_DURATION_SECONDS.labels(
+                model=model_used or UNKNOWN_MODEL, status="error"
+            ).observe(time.monotonic() - started)
             yield {"data": sse_payload({"type": "error", "message": "stream_failed"})}
             return
 
-        latency_ms = int((time.monotonic() - started) * 1000)
+        elapsed = time.monotonic() - started
+        latency_ms = int(elapsed * 1000)
+        CHATS_TOTAL.labels(status="ok", model=model_used or UNKNOWN_MODEL).inc()
+        CHAT_DURATION_SECONDS.labels(
+            model=model_used or UNKNOWN_MODEL, status="ok"
+        ).observe(elapsed)
         log.info(
             "chat_completed",
             session_id=body.sessionId,

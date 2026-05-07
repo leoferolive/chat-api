@@ -9,6 +9,8 @@ from pathlib import Path
 
 import aiosqlite
 
+from .metrics import DAILY_CALLS
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -144,4 +146,6 @@ class Database:
             "SELECT count FROM daily_calls WHERE day = ?", (day,)
         ) as cur:
             row = await cur.fetchone()
-        return int(row[0]) if row else 0
+        count = int(row[0]) if row else 0
+        DAILY_CALLS.set(count)
+        return count
