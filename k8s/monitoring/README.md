@@ -20,6 +20,59 @@ Instala `kube-prometheus-stack` (Prometheus Operator + Prometheus + Grafana
   `https://api.telegram.org/bot<TOKEN>/getUpdates` — o `chat.id` aparece
   no JSON. Use o ID **negativo** se for um grupo, positivo se for DM.
 
+- Acesso ao Postgres já rodando no cluster (namespace `database`,
+  Service `postgres.database.svc.cluster.local:5432`, credenciais root
+  no Secret `postgres-secret`). O Grafana usa um DB e user dedicados
+  criados a partir desse Postgres — ver "Provisionar Postgres do
+  Grafana" abaixo.
+
+## Provisionar Postgres do Grafana
+
+Idempotente — re-rodar atualiza a senha sem erro. A senha é passada
+para o `psql` via variável (`-v pw=`), evitando aparecer em `ps` no
+host local e ficar inline no SQL.
+
+```bash
+GRAFANA_DB_PASS=$(openssl rand -hex 16)
+PG_POD=$(kubectl get pods -n database --no-headers | head -1 | awk '{print $1}')
+
+kubectl exec -n database "$PG_POD" -i -- \
+  env PGPASSWORD=root \
+  psql -U root -d root -v ON_ERROR_STOP=1 -v pw="$GRAFANA_DB_PASS" <<'EOF'
+SELECT 'CREATE DATABASE grafana'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'grafana')\gexec
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'grafana') THEN
+    EXECUTE format('CREATE ROLE grafana LOGIN PASSWORD %L', :'pw');
+  ELSE
+    EXECUTE format('ALTER ROLE grafana WITH PASSWORD %L', :'pw');
+  END IF;
+END $$;
+
+GRANT ALL PRIVILEGES ON DATABASE grafana TO grafana;
+ALTER DATABASE grafana OWNER TO grafana;
+EOF
+
+kubectl exec -n database "$PG_POD" -- env PGPASSWORD=root \
+  psql -U root -d grafana -c "GRANT ALL ON SCHEMA public TO grafana;"
+
+# Secret consumido pelo Grafana via envFromSecret (key vira env var)
+kubectl create secret generic grafana-postgres \
+  -n monitoring \
+  --from-literal=GF_DATABASE_PASSWORD="$GRAFANA_DB_PASS" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+O Grafana cria o schema automaticamente ao subir contra um DB vazio
+(85+ tabelas; auto-migrations a cada upgrade do chart).
+
+> **Dependência operacional:** o pod do Grafana agora tem hard-dependency
+> em `postgres.database`. Se o Postgres cair, Grafana entra em CrashLoop.
+> Mesma classe de criticidade dos outros DBs do cluster (`nossagrana_*`,
+> `nossalista_*`, etc).
+
 ## Instalação
 
 ```bash
@@ -30,7 +83,9 @@ helm repo update
 # 2. Criar namespace
 kubectl apply -f k8s/monitoring/namespace.yaml
 
-# 3. Criar Secrets (alertmanager-telegram + grafana-admin) — NÃO commitar
+# 3. Criar Secrets (alertmanager-telegram + grafana-admin + grafana-postgres)
+#    — NÃO commitar. O grafana-postgres é provisionado no passo "Provisionar
+#    Postgres do Grafana" acima.
 kubectl create secret generic alertmanager-telegram \
   -n monitoring \
   --from-literal=bot_token='123456:ABC-DEF...'

@@ -138,6 +138,28 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
   defaultDashboardsTimezone: America/Sao_Paulo
+
+  # External Postgres backend — replaces the bundled SQLite (which gave us
+  # `database is locked` under concurrent writes and broke the dashboard
+  # grid render at large viewports). DB and user provisioned out-of-band
+  # in the shared `postgres.database` instance; password lives in the
+  # `grafana-postgres` Secret as key GF_DATABASE_PASSWORD (Grafana picks
+  # it up via env override of [database].password).
+  grafana.ini:
+    database:
+      type: postgres
+      host: postgres.database.svc.cluster.local:5432
+      name: grafana
+      user: grafana
+      ssl_mode: disable
+      max_open_conn: 30
+      max_idle_conn: 5
+      # Reap idle connections before Postgres' idle_in_transaction_session_timeout.
+      conn_max_lifetime: 14400
+  # Singular `envFromSecret`; chart also accepts plural `envFromSecrets: [...]`.
+  # Stick with singular here — all keys (only GF_DATABASE_PASSWORD today) become env vars.
+  envFromSecret: grafana-postgres
+
   ingress:
     enabled: true
     ingressClassName: traefik
@@ -157,10 +179,12 @@ grafana:
     datasources:
       enabled: true
       searchNamespace: ALL
+
+  # No SQLite, no need for the local PVC. The container still mounts an
+  # emptyDir at /var/lib/grafana for plugin/cache scratch.
   persistence:
-    enabled: true
-    storageClassName: local-path
-    size: 2Gi
+    enabled: false
+
   resources:
     requests:
       cpu: 50m
