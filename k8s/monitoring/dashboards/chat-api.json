@@ -144,6 +144,38 @@
       ],
       "title": "Memória — chat-api",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "id": 9,
+      "options": {"legend": {"displayMode": "list", "placement": "right"}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
+      "targets": [
+        {
+          "expr": "topk(10, sum by (user) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\"}[$__range])))",
+          "legendFormat": "{{user}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Top usuários (ranking, intervalo)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "id": 10,
+      "options": {"legend": {"displayMode": "list", "placement": "right"}, "pieType": "donut", "tooltip": {"mode": "single"}},
+      "targets": [
+        {
+          "expr": "sum by (lang) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\"}[$__range]))",
+          "legendFormat": "{{lang}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Distribuição por idioma",
+      "type": "piechart"
     }
   ],
   "refresh": "30s",
@@ -163,6 +195,20 @@
         "refresh": 2,
         "regex": "",
         "type": "query"
+      },
+      {
+        "current": {"text": "All", "value": "$__all"},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "User",
+        "multi": true,
+        "name": "user",
+        "options": [],
+        "query": "label_values(chat_api_chats_total{namespace=~\"$namespace\"}, user)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
       }
     ]
   },
@@ -171,6 +217,6 @@
   "timezone": "America/Sao_Paulo",
   "title": "chat-api",
   "uid": "chat-api",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
