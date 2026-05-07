@@ -37,6 +37,24 @@ class Settings(BaseSettings):
     rate_limit_per_ip: str = "10/5minutes"
     daily_llm_call_limit: int = 500
 
+    # Per-IP daily ceiling (extra to the burst rate limit above). Counts
+    # successful LLM calls only — a single attacker IP can't run the
+    # global cost gate to zero by themselves.
+    daily_calls_per_ip_limit: int = 80
+
+    # Per-session soft limit. A client could rotate sessionId to bypass,
+    # so the IP cap is the real defence; this stops an honest client
+    # from looping inside the same drawer.
+    messages_per_session_limit: int = 10
+
+    # Pydantic-enforced caps on user input. Tight enough to prevent
+    # prompt-stuffing abuse, loose enough for genuine career questions.
+    max_user_message_chars: int = 800
+    max_messages_per_request: int = 20
+
+    # Cap on completion length. Keeps responses concise and bounded.
+    llm_max_tokens: int = 400
+
     llm_providers: str = "gemini/gemini-2.5-flash,openrouter/anthropic/claude-haiku-4.5"
 
     retriever_top_n: int = 5

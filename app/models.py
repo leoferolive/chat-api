@@ -6,17 +6,35 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .config import get_settings
+
+
+def _max_chars() -> int:
+    return get_settings().max_user_message_chars
+
+
+def _max_messages() -> int:
+    return get_settings().max_messages_per_request
+
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
-    content: str
+    # max_length is read at validation time so tests can override via env
+    # without freezing the constant at module import.
+    content: str = Field(..., min_length=1, max_length=_max_chars())
 
 
 class ChatRequest(BaseModel):
-    sessionId: str = Field(..., min_length=1, max_length=128)
-    messages: list[ChatMessage] = Field(..., min_length=1)
+    # UUID-shaped sessionId only (the frontend uses crypto.randomUUID).
+    # Reject arbitrary strings — they show up in logs and the DB and
+    # we don't want injection or XSS-via-log surfaces.
+    sessionId: str = Field(
+        ...,
+        pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    )
+    messages: list[ChatMessage] = Field(..., min_length=1, max_length=_max_messages())
     lang: Literal["pt", "en"] = "pt"
-    turnstileToken: str | None = None
+    turnstileToken: str | None = Field(default=None, max_length=4096)
 
 
 class ChatTokenChunk(BaseModel):

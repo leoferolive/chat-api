@@ -62,7 +62,7 @@ async def stream_completion(
     providers: list[str],
     *,
     temperature: float = 0.3,
-    max_tokens: int = 1024,
+    max_tokens: int | None = None,
 ) -> AsyncIterator[dict]:
     """Yield events as the LLM streams.
 
@@ -75,6 +75,9 @@ async def stream_completion(
     """
     if not providers:
         raise AllProvidersFailed("no providers configured")
+
+    if max_tokens is None:
+        max_tokens = get_settings().llm_max_tokens
 
     attempts: list[str] = []
     last_err: Exception | None = None

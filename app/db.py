@@ -149,3 +149,34 @@ class Database:
         count = int(row[0]) if row else 0
         DAILY_CALLS.set(count)
         return count
+
+    async def count_user_messages_in_session(self, session_id: str) -> int:
+        """Count how many user-role messages we've stored for a sessionId."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'user'",
+            (session_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def count_calls_today_by_ip(self, ip_hash: str) -> int:
+        """Count assistant turns served to this IP today (UTC)."""
+        assert self._conn is not None
+        if not ip_hash:
+            return 0
+        # Treat assistant rows as the "served call" marker. Day boundary
+        # uses the same UTC truncation as the global counter.
+        day_start = int(
+            datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        )
+        async with self._conn.execute(
+            """
+            SELECT COUNT(*) FROM messages m
+            JOIN sessions s ON s.id = m.session_id
+            WHERE s.ip_hash = ? AND m.role = 'assistant' AND m.created_at >= ?
+            """,
+            (ip_hash, day_start),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0

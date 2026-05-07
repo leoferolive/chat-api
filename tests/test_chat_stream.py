@@ -35,7 +35,7 @@ async def test_healthz(client) -> None:
 @pytest.mark.asyncio
 async def test_chat_stream_happy_path(client, mock_llm) -> None:
     body = {
-        "sessionId": "sess-happy",
+        "sessionId": "11111111-1111-4111-8111-111111111111",
         "messages": [{"role": "user", "content": "Como foi o trabalho do Leonardo na Wiley?"}],
         "lang": "pt",
         "turnstileToken": None,
@@ -55,7 +55,7 @@ async def test_chat_stream_happy_path(client, mock_llm) -> None:
 async def test_chat_stream_provider_fallback(client, mock_llm) -> None:
     mock_llm.behaviour["mock/primary"] = "raise_open"
     body = {
-        "sessionId": "sess-fallback",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
         "messages": [{"role": "user", "content": "Wiley?"}],
         "lang": "pt",
     }
@@ -72,7 +72,7 @@ async def test_chat_stream_all_providers_fail(client, mock_llm) -> None:
     mock_llm.behaviour["mock/primary"] = "raise_open"
     mock_llm.behaviour["mock/secondary"] = "raise_open"
     body = {
-        "sessionId": "sess-allfail",
+        "sessionId": "33333333-3333-4333-8333-333333333333",
         "messages": [{"role": "user", "content": "anything"}],
         "lang": "pt",
     }
@@ -94,7 +94,7 @@ async def test_chat_stream_turnstile_required_on_first(client, monkeypatch) -> N
     client.app.state.settings.turnstile_disabled = False  # type: ignore[attr-defined]
 
     body = {
-        "sessionId": "sess-tt",
+        "sessionId": "44444444-4444-4444-8444-444444444444",
         "messages": [{"role": "user", "content": "hello"}],
         "lang": "pt",
         "turnstileToken": None,
@@ -112,7 +112,7 @@ async def test_chat_stream_cost_gate(client) -> None:
         await db.increment_calls_today()
 
     body = {
-        "sessionId": "sess-gate",
+        "sessionId": "55555555-5555-4555-8555-555555555555",
         "messages": [{"role": "user", "content": "hi"}],
         "lang": "pt",
     }
@@ -126,7 +126,7 @@ async def test_chat_stream_cost_gate(client) -> None:
 async def test_chat_stream_persists_messages(client) -> None:
     db = client.app.state.db  # type: ignore[attr-defined]
     body = {
-        "sessionId": "sess-persist",
+        "sessionId": "66666666-6666-4666-8666-666666666666",
         "messages": [{"role": "user", "content": "Wiley?"}],
         "lang": "pt",
     }
@@ -137,7 +137,7 @@ async def test_chat_stream_persists_messages(client) -> None:
     for _ in range(20):
         await asyncio.sleep(0.05)
         async with db._conn.execute(  # type: ignore[attr-defined]
-            "SELECT role FROM messages WHERE session_id = ?", ("sess-persist",)
+            "SELECT role FROM messages WHERE session_id = ?", ("66666666-6666-4666-8666-666666666666",)
         ) as cur:
             rows = await cur.fetchall()
         if {r[0] for r in rows} >= {"user", "assistant"}:
@@ -145,3 +145,72 @@ async def test_chat_stream_persists_messages(client) -> None:
     roles = {r[0] for r in rows}
     assert "user" in roles
     assert "assistant" in roles
+
+
+# ---------- input validation hard limits ------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_rejects_oversized_message(client) -> None:
+    """Pydantic validator rejects content > MAX_USER_MESSAGE_CHARS."""
+    body = {
+        "sessionId": "77777777-7777-4777-8777-777777777777",
+        "messages": [{"role": "user", "content": "x" * 1000}],
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_rejects_too_many_messages(client) -> None:
+    """Pydantic validator caps the messages array length."""
+    body = {
+        "sessionId": "88888888-8888-4888-8888-888888888888",
+        "messages": [{"role": "user", "content": "ok"}] * 25,
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_rejects_non_uuid_session(client) -> None:
+    body = {
+        "sessionId": "not-a-uuid",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_rejects_invalid_lang(client) -> None:
+    body = {
+        "sessionId": "99999999-9999-4999-8999-999999999999",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "fr",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_session_message_cap(client, monkeypatch) -> None:
+    """11th user message in same sessionId must return 429 session_limit_reached."""
+    sid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    db = client.app.state.db  # type: ignore[attr-defined]
+    # Pre-seed 10 user messages directly in the DB.
+    for i in range(10):
+        await db.save_turn(session_id=sid, role="user", content=f"msg{i}")
+
+    body = {
+        "sessionId": sid,
+        "messages": [{"role": "user", "content": "11th"}],
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 429
+    events = parse_sse_events(resp.text)
+    assert any(e.get("message") == "session_limit_reached" for e in events)

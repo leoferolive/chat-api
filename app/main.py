@@ -188,8 +188,43 @@ async def _handle_chat_stream(
         resp.status_code = 503
         return resp
 
+    # Per-session soft cap (drawer rotates sessionId on reload).
+    session_count = await db.count_user_messages_in_session(body.sessionId)
+    if session_count >= settings.messages_per_session_limit:
+        log.warning(
+            "session_limit_reached",
+            session_id=body.sessionId,
+            count=session_count,
+            limit=settings.messages_per_session_limit,
+        )
+
+        async def session_limit_gen():
+            yield {"data": sse_payload({"type": "error", "message": "session_limit_reached"})}
+
+        resp = build_response(session_limit_gen())
+        resp.status_code = 429
+        return resp
+
+    # Per-IP daily ceiling (real defence against rotating sessionIds).
+    ip_hashed_pre = hash_ip(ip, settings.ip_hash_salt)
+    ip_calls_today = await db.count_calls_today_by_ip(ip_hashed_pre)
+    if ip_calls_today >= settings.daily_calls_per_ip_limit:
+        log.warning(
+            "ip_daily_limit_reached",
+            ip_hash_prefix=ip_hashed_pre[:8],
+            count=ip_calls_today,
+            limit=settings.daily_calls_per_ip_limit,
+        )
+
+        async def ip_limit_gen():
+            yield {"data": sse_payload({"type": "error", "message": "ip_daily_limit"})}
+
+        resp = build_response(ip_limit_gen())
+        resp.status_code = 429
+        return resp
+
     # Persist session row + user turn (fire-and-forget).
-    ip_hashed = hash_ip(ip, settings.ip_hash_salt)
+    ip_hashed = ip_hashed_pre
     asyncio.create_task(db.upsert_session(body.sessionId, ip_hashed, body.lang))
     user_msg = body.messages[-1]
     if user_msg.role == "user":

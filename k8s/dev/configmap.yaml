@@ -16,6 +16,11 @@ data:
   SESSION_TTL_SECONDS: "3600"
   RATE_LIMIT_PER_IP: "30/5minutes"
   DAILY_LLM_CALL_LIMIT: "200"
+  DAILY_CALLS_PER_IP_LIMIT: "200"
+  MESSAGES_PER_SESSION_LIMIT: "10"
+  MAX_USER_MESSAGE_CHARS: "800"
+  MAX_MESSAGES_PER_REQUEST: "20"
+  LLM_MAX_TOKENS: "400"
   # Dev exercises OpenRouter as the primary provider so we can validate
   # the integration independently of Gemini.
   LLM_PROVIDERS: "openrouter/deepseek/deepseek-v4-flash,openrouter/google/gemini-2.5-flash-lite,gemini/gemini-2.5-flash"
