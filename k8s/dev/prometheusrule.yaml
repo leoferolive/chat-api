@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chat-api
+  namespace: chat-api-dev
+  labels:
+    app: chat-api-dev
+    release: kps
+spec:
+  # Thresholds reduzidos vs prod — dev recebe pouco tráfego, então
+  # alertas servem mais para validar a stack do que para SLOs reais.
+  groups:
+    - name: chat-api-dev.cost
+      interval: 30s
+      rules:
+        - alert: ChatApiHighDailyTokens
+          expr: sum(increase(chat_api_tokens_total{namespace="chat-api-dev"}[24h])) > 50000
+          for: 5m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: tokens/24h > 50k"
+            description: "Total nas últimas 24h: {{ $value | humanize }} tokens."
+
+        - alert: ChatApiCostGateHit
+          expr: increase(chat_api_cost_gate_hits_total{namespace="chat-api-dev"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: cost gate atingido"
+            description: "DAILY_LLM_CALL_LIMIT bloqueou requests ({{ $value | humanize }} bloqueios em 5min)."
+
+    - name: chat-api-dev.health
+      interval: 30s
+      rules:
+        - alert: ChatApiAllProvidersFailing
+          # Guard with traffic > 0.01/s so an idle dev window doesn't fire critical
+          # on a single transient failure.
+          expr: |
+            sum(rate(chat_api_provider_failures_total{namespace="chat-api-dev"}[5m])) > 0
+              and
+            sum(rate(chat_api_chats_total{namespace="chat-api-dev",status="ok"}[5m])) == 0
+              and
+            sum(rate(chat_api_chats_total{namespace="chat-api-dev"}[5m])) > 0.01
+          for: 5m
+          labels:
+            severity: critical
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: todos os providers falhando"
+            description: "Nenhum chat ok há 5min e providers gerando falhas."
+
+        - alert: ChatApiPodRestarting
+          # Container name in dev is "chat-api-dev" (matches the deployment).
+          expr: increase(kube_pod_container_status_restarts_total{namespace="chat-api-dev",container="chat-api-dev"}[15m]) > 3
+          for: 0m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: pod restartando"
+            description: "{{ $value | humanize }} restarts em 15min."
