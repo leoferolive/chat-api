@@ -152,11 +152,11 @@
   "templating": {
     "list": [
       {
-        "current": {"text": "chat-api", "value": "chat-api"},
+        "current": {"text": "All", "value": "$__all"},
         "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "includeAll": false,
+        "includeAll": true,
         "label": "Namespace",
-        "multi": false,
+        "multi": true,
         "name": "namespace",
         "options": [],
         "query": "label_values(chat_api_chats_total, namespace)",
