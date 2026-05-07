@@ -28,15 +28,29 @@ Instala `kube-prometheus-stack` (Prometheus Operator + Prometheus + Grafana
 
 ## Provisionar Postgres do Grafana
 
+Idempotente — re-rodar atualiza a senha sem erro. A senha é passada
+para o `psql` via variável (`-v pw=`), evitando aparecer em `ps` no
+host local e ficar inline no SQL.
+
 ```bash
-# Gera senha aleatória, cria DB+user e salva pra usar no Secret
 GRAFANA_DB_PASS=$(openssl rand -hex 16)
 PG_POD=$(kubectl get pods -n database --no-headers | head -1 | awk '{print $1}')
 
-kubectl exec -n database "$PG_POD" -- env PGPASSWORD=root \
-  psql -U root -d root <<EOF
-CREATE DATABASE grafana;
-CREATE USER grafana WITH PASSWORD '$GRAFANA_DB_PASS';
+kubectl exec -n database "$PG_POD" -i -- \
+  env PGPASSWORD=root \
+  psql -U root -d root -v ON_ERROR_STOP=1 -v pw="$GRAFANA_DB_PASS" <<'EOF'
+SELECT 'CREATE DATABASE grafana'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'grafana')\gexec
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'grafana') THEN
+    EXECUTE format('CREATE ROLE grafana LOGIN PASSWORD %L', :'pw');
+  ELSE
+    EXECUTE format('ALTER ROLE grafana WITH PASSWORD %L', :'pw');
+  END IF;
+END $$;
+
 GRANT ALL PRIVILEGES ON DATABASE grafana TO grafana;
 ALTER DATABASE grafana OWNER TO grafana;
 EOF
@@ -47,10 +61,17 @@ kubectl exec -n database "$PG_POD" -- env PGPASSWORD=root \
 # Secret consumido pelo Grafana via envFromSecret (key vira env var)
 kubectl create secret generic grafana-postgres \
   -n monitoring \
-  --from-literal=GF_DATABASE_PASSWORD="$GRAFANA_DB_PASS"
+  --from-literal=GF_DATABASE_PASSWORD="$GRAFANA_DB_PASS" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-O Grafana cria o schema automaticamente ao subir contra um DB vazio.
+O Grafana cria o schema automaticamente ao subir contra um DB vazio
+(85+ tabelas; auto-migrations a cada upgrade do chart).
+
+> **Dependência operacional:** o pod do Grafana agora tem hard-dependency
+> em `postgres.database`. Se o Postgres cair, Grafana entra em CrashLoop.
+> Mesma classe de criticidade dos outros DBs do cluster (`nossagrana_*`,
+> `nossalista_*`, etc).
 
 ## Instalação
 

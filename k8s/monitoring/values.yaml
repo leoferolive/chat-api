@@ -154,6 +154,10 @@ grafana:
       ssl_mode: disable
       max_open_conn: 30
       max_idle_conn: 5
+      # Reap idle connections before Postgres' idle_in_transaction_session_timeout.
+      conn_max_lifetime: 14400
+  # Singular `envFromSecret`; chart also accepts plural `envFromSecrets: [...]`.
+  # Stick with singular here — all keys (only GF_DATABASE_PASSWORD today) become env vars.
   envFromSecret: grafana-postgres
 
   ingress:
