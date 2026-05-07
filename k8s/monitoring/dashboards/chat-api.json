@@ -153,7 +153,7 @@
       "options": {"legend": {"displayMode": "list", "placement": "right"}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
       "targets": [
         {
-          "expr": "topk(10, sum by (user) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\"}[$__range])))",
+          "expr": "topk(10, sum by (user) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user=~\"$user\"}[$__range])))",
           "legendFormat": "{{user}}",
           "refId": "A"
         }
@@ -169,7 +169,7 @@
       "options": {"legend": {"displayMode": "list", "placement": "right"}, "pieType": "donut", "tooltip": {"mode": "single"}},
       "targets": [
         {
-          "expr": "sum by (lang) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\"}[$__range]))",
+          "expr": "sum by (lang) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",lang!=\"\",user=~\"$user\"}[$__range]))",
           "legendFormat": "{{lang}}",
           "refId": "A"
         }
