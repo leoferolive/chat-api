@@ -20,6 +20,38 @@ Instala `kube-prometheus-stack` (Prometheus Operator + Prometheus + Grafana
   `https://api.telegram.org/bot<TOKEN>/getUpdates` — o `chat.id` aparece
   no JSON. Use o ID **negativo** se for um grupo, positivo se for DM.
 
+- Acesso ao Postgres já rodando no cluster (namespace `database`,
+  Service `postgres.database.svc.cluster.local:5432`, credenciais root
+  no Secret `postgres-secret`). O Grafana usa um DB e user dedicados
+  criados a partir desse Postgres — ver "Provisionar Postgres do
+  Grafana" abaixo.
+
+## Provisionar Postgres do Grafana
+
+```bash
+# Gera senha aleatória, cria DB+user e salva pra usar no Secret
+GRAFANA_DB_PASS=$(openssl rand -hex 16)
+PG_POD=$(kubectl get pods -n database --no-headers | head -1 | awk '{print $1}')
+
+kubectl exec -n database "$PG_POD" -- env PGPASSWORD=root \
+  psql -U root -d root <<EOF
+CREATE DATABASE grafana;
+CREATE USER grafana WITH PASSWORD '$GRAFANA_DB_PASS';
+GRANT ALL PRIVILEGES ON DATABASE grafana TO grafana;
+ALTER DATABASE grafana OWNER TO grafana;
+EOF
+
+kubectl exec -n database "$PG_POD" -- env PGPASSWORD=root \
+  psql -U root -d grafana -c "GRANT ALL ON SCHEMA public TO grafana;"
+
+# Secret consumido pelo Grafana via envFromSecret (key vira env var)
+kubectl create secret generic grafana-postgres \
+  -n monitoring \
+  --from-literal=GF_DATABASE_PASSWORD="$GRAFANA_DB_PASS"
+```
+
+O Grafana cria o schema automaticamente ao subir contra um DB vazio.
+
 ## Instalação
 
 ```bash
@@ -30,7 +62,9 @@ helm repo update
 # 2. Criar namespace
 kubectl apply -f k8s/monitoring/namespace.yaml
 
-# 3. Criar Secrets (alertmanager-telegram + grafana-admin) — NÃO commitar
+# 3. Criar Secrets (alertmanager-telegram + grafana-admin + grafana-postgres)
+#    — NÃO commitar. O grafana-postgres é provisionado no passo "Provisionar
+#    Postgres do Grafana" acima.
 kubectl create secret generic alertmanager-telegram \
   -n monitoring \
   --from-literal=bot_token='123456:ABC-DEF...'
