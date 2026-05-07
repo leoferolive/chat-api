@@ -13,7 +13,9 @@ data:
   SESSION_TTL_SECONDS: "3600"
   RATE_LIMIT_PER_IP: "30/5minutes"
   DAILY_LLM_CALL_LIMIT: "200"
-  LLM_PROVIDERS: "gemini/gemini-2.5-flash,openrouter/deepseek/deepseek-v4-flash,openrouter/google/gemini-2.5-flash-lite"
+  # Dev exercises OpenRouter as the primary provider so we can validate
+  # the integration independently of Gemini.
+  LLM_PROVIDERS: "openrouter/deepseek/deepseek-v4-flash,openrouter/google/gemini-2.5-flash-lite,gemini/gemini-2.5-flash"
   ZAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4/"
   RETRIEVER_TOP_N: "5"
   WIKI_POLL_SECONDS: "60"
