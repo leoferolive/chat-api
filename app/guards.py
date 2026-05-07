@@ -14,7 +14,9 @@ from slowapi.util import get_remote_address
 
 from .config import Settings
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
@@ -50,6 +52,7 @@ async def verify_turnstile(token: str | None, settings: Settings, *, remote_ip: 
     if settings.turnstile_disabled:
         return True
     if not token:
+        logger.warning("turnstile_token_missing", remote_ip=remote_ip)
         return False
 
     payload: dict[str, Any] = {
@@ -64,9 +67,20 @@ async def verify_turnstile(token: str | None, settings: Settings, *, remote_ip: 
             resp = await client.post(TURNSTILE_VERIFY_URL, data=payload)
         body = resp.json()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("turnstile: verify failed transport", extra={"err": str(exc)})
+        logger.warning("turnstile_transport_error", err=str(exc))
         return False
-    return bool(body.get("success"))
+
+    success = bool(body.get("success"))
+    if not success:
+        logger.warning(
+            "turnstile_rejected",
+            error_codes=body.get("error-codes", []),
+            hostname=body.get("hostname"),
+            challenge_ts=body.get("challenge_ts"),
+            remote_ip=remote_ip,
+            token_prefix=token[:20] if token else None,
+        )
+    return success
 
 
 # --- Session JWT ----------------------------------------------------------
