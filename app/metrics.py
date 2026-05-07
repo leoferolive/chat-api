@@ -11,8 +11,8 @@ from prometheus_client import Counter, Gauge, Histogram, Info
 
 CHATS_TOTAL = Counter(
     "chat_api_chats_total",
-    "Total chat completions handled, by outcome and model.",
-    labelnames=("status", "model"),
+    "Total chat completions handled, by outcome, model, language and user.",
+    labelnames=("status", "model", "lang", "user"),
 )
 
 CHAT_DURATION_SECONDS = Histogram(

@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app import config as config_mod
 from app import llm_router as llm_router_mod
+from app import user_identity as user_identity_mod
 from app.config import Settings
 
 WIKI_FIXTURE_INDEX = """# Test Wiki
@@ -78,11 +79,14 @@ def settings(temp_wiki: Path, temp_db_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("DAILY_LLM_CALL_LIMIT", "500")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("IP_HASH_SALT", "test-salt")
+    monkeypatch.setenv("USER_HASH_SALT", "test-user-salt")
     monkeypatch.setenv("WIKI_POLL_SECONDS", "0")
     config_mod.reset_settings_cache()
+    user_identity_mod.reset_label_bucket()
     s = config_mod.get_settings()
     yield s
     config_mod.reset_settings_cache()
+    user_identity_mod.reset_label_bucket()
 
 
 # ---- LLM mock ------------------------------------------------------------

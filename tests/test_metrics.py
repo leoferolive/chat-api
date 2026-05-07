@@ -119,6 +119,87 @@ async def test_metrics_cost_gate_counter(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_metrics_chat_user_label_set_when_userName_present(client, mock_llm) -> None:
+    body = {
+        "sessionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "pt",
+        "userName": "Léo Ferreira",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 200
+
+    metrics_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
+    # Find any chats_total line for status=ok and inspect the user label.
+    user_label_seen = None
+    for line in metrics_body.splitlines():
+        if line.startswith("chat_api_chats_total{") and 'status="ok"' in line and 'lang="pt"' in line:
+            m = re.search(r'user="([^"]+)"', line)
+            if m and m.group(1) != "anonymous":
+                user_label_seen = m.group(1)
+                break
+    assert user_label_seen is not None
+    assert user_label_seen.startswith("leo#")
+
+
+@pytest.mark.asyncio
+async def test_metrics_chat_user_label_anonymous_when_userName_omitted(client, mock_llm) -> None:
+    body = {
+        "sessionId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 200
+
+    metrics_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
+    found_anonymous = any(
+        line.startswith("chat_api_chats_total{")
+        and 'status="ok"' in line
+        and 'user="anonymous"' in line
+        for line in metrics_body.splitlines()
+    )
+    assert found_anonymous
+
+
+@pytest.mark.asyncio
+async def test_chat_request_rejects_malformed_userName(client) -> None:
+    body = {
+        "sessionId": "11111111-1111-4111-8111-111111111111",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "pt",
+        "userName": "x" * 100,  # exceeds max_length=40
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_db_persists_user_name_on_session(client, mock_llm) -> None:
+    body = {
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "messages": [{"role": "user", "content": "oi"}],
+        "lang": "pt",
+        "userName": "Maria",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 200
+
+    db = client.app.state.db  # type: ignore[attr-defined]
+    # upsert_session is fire-and-forget; give the loop a tick.
+    import asyncio
+
+    await asyncio.sleep(0.05)
+    async with db._conn.execute(
+        "SELECT user_name FROM sessions WHERE id = ?",
+        ("22222222-2222-4222-8222-222222222222",),
+    ) as cur:
+        row = await cur.fetchone()
+    assert row is not None
+    assert row[0] == "Maria"
+
+
+@pytest.mark.asyncio
 async def test_metrics_provider_failure_then_fallback(client, mock_llm) -> None:
     mock_llm.behaviour["mock/primary"] = "raise_open"
     before = metric_value(

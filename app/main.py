@@ -42,6 +42,7 @@ from .models import ChatRequest
 from .prompt import build_messages
 from .retriever import Retriever
 from .sse import build_response, sse_payload
+from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name
 from .wiki_loader import WikiLoader
 
 
@@ -160,6 +161,10 @@ async def _handle_chat_stream(
 
     ip = client_ip(request)
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
+    user_raw = sanitize_user_name(body.userName)
+    user_label = cap_user_label(
+        normalize_user_label(body.userName, salt=settings.user_hash_salt)
+    )
 
     # Turnstile / session enforcement BEFORE we touch the LLM.
     turnstile_ok = await verify_turnstile(body.turnstileToken, settings, remote_ip=ip)
@@ -179,7 +184,12 @@ async def _handle_chat_stream(
         # Don't observe chat_duration here — the request never streamed,
         # near-zero observations would skew the latency p95/p99 panels.
         COST_GATE_HITS_TOTAL.inc()
-        CHATS_TOTAL.labels(status="cost_gate", model=UNKNOWN_MODEL).inc()
+        CHATS_TOTAL.labels(
+            status="cost_gate",
+            model=UNKNOWN_MODEL,
+            lang=body.lang,
+            user=user_label,
+        ).inc()
 
         async def gate_gen():
             yield {"data": sse_payload({"type": "error", "message": gate_msg})}
@@ -225,7 +235,9 @@ async def _handle_chat_stream(
 
     # Persist session row + user turn (fire-and-forget).
     ip_hashed = ip_hashed_pre
-    asyncio.create_task(db.upsert_session(body.sessionId, ip_hashed, body.lang))
+    asyncio.create_task(
+        db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw)
+    )
     user_msg = body.messages[-1]
     if user_msg.role == "user":
         asyncio.create_task(
@@ -273,7 +285,12 @@ async def _handle_chat_stream(
                     }
         except AllProvidersFailed as exc:
             log.error("all_providers_failed", err=str(exc), session=body.sessionId)
-            CHATS_TOTAL.labels(status="error", model=model_used or UNKNOWN_MODEL).inc()
+            CHATS_TOTAL.labels(
+                status="error",
+                model=model_used or UNKNOWN_MODEL,
+                lang=body.lang,
+                user=user_label,
+            ).inc()
             CHAT_DURATION_SECONDS.labels(
                 model=model_used or UNKNOWN_MODEL, status="error"
             ).observe(time.monotonic() - started)
@@ -281,7 +298,12 @@ async def _handle_chat_stream(
             return
         except Exception as exc:  # noqa: BLE001
             log.exception("stream_failed", err=str(exc), session=body.sessionId)
-            CHATS_TOTAL.labels(status="error", model=model_used or UNKNOWN_MODEL).inc()
+            CHATS_TOTAL.labels(
+                status="error",
+                model=model_used or UNKNOWN_MODEL,
+                lang=body.lang,
+                user=user_label,
+            ).inc()
             CHAT_DURATION_SECONDS.labels(
                 model=model_used or UNKNOWN_MODEL, status="error"
             ).observe(time.monotonic() - started)
@@ -290,7 +312,12 @@ async def _handle_chat_stream(
 
         elapsed = time.monotonic() - started
         latency_ms = int(elapsed * 1000)
-        CHATS_TOTAL.labels(status="ok", model=model_used or UNKNOWN_MODEL).inc()
+        CHATS_TOTAL.labels(
+            status="ok",
+            model=model_used or UNKNOWN_MODEL,
+            lang=body.lang,
+            user=user_label,
+        ).inc()
         CHAT_DURATION_SECONDS.labels(
             model=model_used or UNKNOWN_MODEL, status="ok"
         ).observe(elapsed)
@@ -298,6 +325,7 @@ async def _handle_chat_stream(
             "chat_completed",
             session_id=body.sessionId,
             lang=body.lang,
+            user=user_label,
             model_used=model_used,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
