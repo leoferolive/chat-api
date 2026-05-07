@@ -60,7 +60,7 @@ async def test_metrics_increment_on_successful_chat(client, mock_llm) -> None:
     )
 
     body = {
-        "sessionId": "sess-metrics-ok",
+        "sessionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "messages": [{"role": "user", "content": "hello"}],
         "lang": "pt",
     }
@@ -103,7 +103,7 @@ async def test_metrics_cost_gate_counter(client) -> None:
         await db.increment_calls_today()
 
     body = {
-        "sessionId": "sess-metrics-gate",
+        "sessionId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         "messages": [{"role": "user", "content": "hi"}],
         "lang": "pt",
     }
@@ -128,7 +128,7 @@ async def test_metrics_provider_failure_then_fallback(client, mock_llm) -> None:
     )
 
     body = {
-        "sessionId": "sess-metrics-fail",
+        "sessionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         "messages": [{"role": "user", "content": "hi"}],
         "lang": "pt",
     }
