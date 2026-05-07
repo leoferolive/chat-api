@@ -5,11 +5,11 @@ metadata:
   namespace: chat-api-dev
 data:
   ENV: "dev"
-  ALLOWED_ORIGINS: "https://leoferolive.com.br,https://leoferolive-dev.com.br,http://localhost:5173"
+  ALLOWED_ORIGINS: "https://leoferolive-dev.leoferolive.com.br,http://localhost:5173"
   WIKI_DIR: "/wiki"
   DB_PATH: "/data/chat.sqlite"
-  # Dev runs without Turnstile until a real site key is provisioned.
-  TURNSTILE_DISABLED: "true"
+  # Dev runs Turnstile so we can debug it without exposing prod traffic.
+  TURNSTILE_DISABLED: "false"
   SESSION_TTL_SECONDS: "3600"
   RATE_LIMIT_PER_IP: "30/5minutes"
   DAILY_LLM_CALL_LIMIT: "200"
