@@ -144,6 +144,10 @@ jobs:
           done
 
       - name: Apply Grafana dashboard ConfigMap
+        # Único Grafana é o de prod; deixar dev escrever no mesmo ConfigMap
+        # arrisca um deploy paralelo de dev sobrescrever o dashboard com a
+        # versão da branch dev. Restrito a prod por isso.
+        if: inputs.environment == 'prod'
         env:
           TAG: ${{ inputs.tag }}
           RESOLVED_SHA: ${{ needs.prepare.outputs.resolved_sha }}
