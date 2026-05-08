@@ -143,6 +143,30 @@ jobs:
             esac
           done
 
+      - name: Apply Grafana dashboard ConfigMap
+        env:
+          TAG: ${{ inputs.tag }}
+          RESOLVED_SHA: ${{ needs.prepare.outputs.resolved_sha }}
+          BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
+        run: |
+          set -euo pipefail
+          DASHBOARD_FILE="k8s/monitoring/dashboards/chat-api.json"
+          if [ ! -f "$DASHBOARD_FILE" ]; then
+            echo "dashboard file $DASHBOARD_FILE not found, skipping ConfigMap apply"
+            exit 0
+          fi
+          kubectl create configmap chat-api-dashboard \
+            -n monitoring \
+            --from-file=chat-api.json="$DASHBOARD_FILE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label configmap chat-api-dashboard -n monitoring \
+            grafana_dashboard=1 --overwrite
+          kubectl annotate configmap chat-api-dashboard -n monitoring \
+            "deploy.chat-api/tag=${TAG}" \
+            "deploy.chat-api/sha=${RESOLVED_SHA}" \
+            "deploy.chat-api/build-time=${BUILD_TIME}" \
+            --overwrite
+
       - name: Update deployment image
         env:
           NAMESPACE: ${{ needs.prepare.outputs.namespace }}
