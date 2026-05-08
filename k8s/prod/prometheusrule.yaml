@@ -124,3 +124,62 @@ spec:
           annotations:
             summary: "chat-api: pod restartando frequentemente"
             description: "{{ $value | humanize }} restarts em 15min no pod {{ $labels.pod }}."
+
+        - alert: ChatApiPodOOMKilled
+          # `last_terminated_reason` mantém o motivo do último término por ~15min,
+          # tempo suficiente para alertar mesmo após o pod reiniciar.
+          expr: |
+            kube_pod_container_status_last_terminated_reason{namespace="chat-api",container="chat-api",reason="OOMKilled"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: pod morto por OOMKilled"
+            description: "Pod {{ $labels.pod }} foi terminado por OOM. Aumentar memory limit ou investigar leak."
+
+        - alert: ChatApiPodCrashLooping
+          expr: |
+            kube_pod_container_status_waiting_reason{namespace="chat-api",container="chat-api",reason="CrashLoopBackOff"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: pod em CrashLoopBackOff"
+            description: "Pod {{ $labels.pod }} em CrashLoopBackOff há 5min — verificar logs do container."
+
+        - alert: ChatApiPodImagePullFailing
+          expr: |
+            kube_pod_container_status_waiting_reason{namespace="chat-api",container="chat-api",reason=~"ImagePullBackOff|ErrImagePull"} == 1
+          for: 5m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: falha ao puxar imagem"
+            description: "Pod {{ $labels.pod }} com {{ $labels.reason }} há 5min — verificar tag/registry/credenciais."
+
+        - alert: ChatApiPodMemoryNearLimit
+          expr: |
+            container_memory_working_set_bytes{namespace="chat-api",container="chat-api"}
+              / on(namespace,pod,container)
+            kube_pod_container_resource_limits{namespace="chat-api",container="chat-api",resource="memory"} > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: memória ≥ 85% do limit"
+            description: "Pod {{ $labels.pod }} usando {{ $value | humanizePercentage }} do memory limit há 10min — risco de OOM."
+
+        - alert: ChatApiPodCpuThrottling
+          expr: |
+            rate(container_cpu_cfs_throttled_seconds_total{namespace="chat-api",container="chat-api"}[5m]) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: CPU throttling significativo"
+            description: "Pod {{ $labels.pod }} com {{ $value | humanize }}s/s de throttle de CPU há 10min — aumentar cpu limit."
