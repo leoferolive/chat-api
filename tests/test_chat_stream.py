@@ -111,6 +111,10 @@ async def test_chat_stream_router_refuses_out_of_scope(client, mock_llm) -> None
     # Refusal text is the persona's fallback line.
     refusal = events[0]["value"]
     assert "não tenho essa informação" in refusal.lower()
+    # Router still consumed a provider call — daily counter must reflect it,
+    # otherwise off-topic floods would never trip the cost gate.
+    db = client.app.state.db  # type: ignore[attr-defined]
+    assert (await db.count_calls_today()) >= 1
 
 
 @pytest.mark.asyncio

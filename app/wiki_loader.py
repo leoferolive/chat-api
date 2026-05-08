@@ -65,6 +65,7 @@ _INDEX_LINE_RE = re.compile(
 class WikiSnapshot:
     pages: dict[str, WikiPage] = field(default_factory=dict)
     index_hash: str = ""
+    index_text: str = ""
     loaded_at: float = 0.0
 
 
@@ -106,14 +107,11 @@ class WikiLoader:
     def index_text(self) -> str:
         """Return the raw content of ``index.md`` (empty if missing).
 
-        Used by the LLM router so the model can browse the catalog itself
-        and pick relevant pages — no parsing on our side.
+        Cached on the snapshot — refreshed together with the page set when
+        ``index.md`` changes. Used by the LLM router to let the model
+        browse the catalog itself.
         """
-        self.load()
-        index_path = self._resolve_root() / "index.md"
-        if not index_path.is_file():
-            return ""
-        return index_path.read_text(encoding="utf-8")
+        return self.load().index_text
 
     # --- internals ------------------------------------------------------
 
@@ -158,6 +156,7 @@ class WikiLoader:
         index_path = root / "index.md"
         root_resolved = root.resolve()
         pages: dict[str, WikiPage] = {}
+        index_text = index_path.read_text(encoding="utf-8") if index_path.is_file() else ""
         if index_path.exists():
             for entry in self._parse_index(index_path):
                 page_file = (root / entry.path).resolve()
@@ -192,6 +191,7 @@ class WikiLoader:
         return WikiSnapshot(
             pages=pages,
             index_hash=self._hash_index(),
+            index_text=index_text,
             loaded_at=time.time(),
         )
 

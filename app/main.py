@@ -246,6 +246,12 @@ async def _handle_chat_stream(
             )
         )
 
+    # Bump the daily call counter once per turn, BEFORE the router runs.
+    # The router itself spends a provider call even when the answer LLM is
+    # short-circuited (refusal path). If we incremented only on the answer
+    # path, off-topic floods would never trip the daily cost gate.
+    await db.increment_calls_today()
+
     # LLM router: ask the model itself which wiki pages to ground on.
     selected_paths = await pick_paths(
         question=user_msg.content,
@@ -258,7 +264,7 @@ async def _handle_chat_stream(
 
     if not selected_paths:
         # Out of scope (or router failed): refuse without invoking the answer
-        # LLM. Don't increment daily_calls — no answer call is made.
+        # LLM. The router call itself was already counted above.
         refusal = refusal_text(body.lang)
         # Persist the assistant turn so the UI shows it on reload.
         asyncio.create_task(
@@ -304,9 +310,6 @@ async def _handle_chat_stream(
 
     pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
     messages_for_llm = build_messages(body.lang, pages, body.messages)
-
-    # Bump call counter just before invoking the LLM.
-    await db.increment_calls_today()
 
     async def event_gen() -> AsyncIterator[dict]:
         model_used = ""

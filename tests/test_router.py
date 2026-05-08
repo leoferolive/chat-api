@@ -85,6 +85,32 @@ async def test_drops_paths_unknown_to_loader(
 
 
 @pytest.mark.asyncio
+async def test_invalid_paths_outcome_when_all_paths_bogus(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    # Router returns paths that all fail validation — distinct from "empty".
+    from prometheus_client import REGISTRY
+
+    def value_for(outcome: str) -> float:
+        return REGISTRY.get_sample_value(
+            "chat_api_router_outcome_total", {"outcome": outcome}
+        ) or 0.0
+
+    before = value_for("invalid_paths")
+    mock_llm.router_response = '{"paths": ["ghost/x.md", "ghost/y.md"]}'
+    paths = await pick_paths(
+        question="qualquer coisa",
+        history=[ChatMessage(role="user", content="qualquer coisa")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == []
+    assert value_for("invalid_paths") - before == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
 async def test_caps_at_max_paths(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:
