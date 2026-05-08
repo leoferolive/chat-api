@@ -1,0 +1,224 @@
+"""Tests for the LLM-based router (app/router.py)."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.config import Settings
+from app.models import ChatMessage
+from app.router import HISTORY_TURNS, MAX_PATHS, pick_paths
+from app.wiki_loader import WikiLoader
+
+
+@pytest.fixture
+def loader(settings: Settings) -> WikiLoader:
+    return WikiLoader(settings.wiki_dir, poll_seconds=0)
+
+
+@pytest.mark.asyncio
+async def test_returns_validated_paths(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    mock_llm.router_response = '{"paths": ["entities/wiley.md", "skills/backend.md"]}'
+    paths = await pick_paths(
+        question="qual a stack do leonardo?",
+        history=[ChatMessage(role="user", content="qual a stack do leonardo?")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == ["entities/wiley.md", "skills/backend.md"]
+    # exactly one router call (no failover needed)
+    assert len(mock_llm.router_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_paths_when_router_says_so(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    mock_llm.router_response = '{"paths": []}'
+    paths = await pick_paths(
+        question="qual a capital da frança?",
+        history=[ChatMessage(role="user", content="qual a capital da frança?")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_malformed_json_returns_empty(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    mock_llm.router_response = "not json at all"
+    paths = await pick_paths(
+        question="qualquer pergunta",
+        history=[ChatMessage(role="user", content="qualquer pergunta")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_drops_paths_unknown_to_loader(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    # only entities/wiley.md exists in the fixture; the other two are bogus
+    mock_llm.router_response = (
+        '{"paths": ["entities/wiley.md", "ghost/page.md", "../escape.md"]}'
+    )
+    paths = await pick_paths(
+        question="me fala sobre wiley",
+        history=[ChatMessage(role="user", content="me fala sobre wiley")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == ["entities/wiley.md"]
+
+
+@pytest.mark.asyncio
+async def test_caps_at_max_paths(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    # Repeats are deduped first; pad with valid paths up to the cap.
+    real = ["entities/wiley.md", "skills/backend.md"]
+    # request 8 paths (some duplicates) — only valid + unique survive,
+    # then capped at MAX_PATHS.
+    flood = real + real + real + real
+    mock_llm.router_response = f'{{"paths": {flood!r}}}'.replace("'", '"')
+    paths = await pick_paths(
+        question="tudo sobre o leonardo",
+        history=[ChatMessage(role="user", content="tudo sobre o leonardo")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == real  # deduped to two — well under MAX_PATHS
+    assert len(paths) <= MAX_PATHS
+
+
+@pytest.mark.asyncio
+async def test_provider_failover(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    # primary fails, secondary returns valid JSON
+    mock_llm.behaviour["mock/primary"] = "raise_open"
+    mock_llm.router_response = '{"paths": ["skills/backend.md"]}'
+    paths = await pick_paths(
+        question="skills do leonardo",
+        history=[ChatMessage(role="user", content="skills do leonardo")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == ["skills/backend.md"]
+    # primary attempted (and failed-open), secondary succeeded
+    assert "mock/primary" in mock_llm.calls
+    assert mock_llm.router_calls == ["mock/secondary"]
+
+
+@pytest.mark.asyncio
+async def test_all_providers_fail_returns_empty(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    mock_llm.behaviour["mock/primary"] = "raise_open"
+    mock_llm.behaviour["mock/secondary"] = "raise_open"
+    paths = await pick_paths(
+        question="qualquer",
+        history=[ChatMessage(role="user", content="qualquer")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_history_truncated_to_last_n_turns(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    # Build 10 turns; router should only see the last HISTORY_TURNS.
+    turns: list[ChatMessage] = []
+    for i in range(10):
+        role = "user" if i % 2 == 0 else "assistant"
+        turns.append(ChatMessage(role=role, content=f"msg-{i}"))
+    captured_messages: list[list[dict]] = []
+
+    import app.llm_router as llm_router_mod
+
+    real = llm_router_mod.litellm.acompletion
+
+    async def spy(**kwargs):
+        if kwargs.get("stream") is False:
+            captured_messages.append(list(kwargs["messages"]))
+        return await real(**kwargs)
+
+    import pytest as _pytest  # noqa: F401 — for monkeypatch typing
+
+    monkeypatch = _pytest.MonkeyPatch()
+    monkeypatch.setattr(llm_router_mod.litellm, "acompletion", spy)
+    try:
+        await pick_paths(
+            question="msg-final",
+            history=turns,
+            lang="pt",
+            loader=loader,
+            providers=settings.provider_list,
+            settings=settings,
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert captured_messages, "router should have called the LLM"
+    sent = captured_messages[0]
+    # 1 system + last HISTORY_TURNS user/assistant + 1 trailing user (the question)
+    assert sent[0]["role"] == "system"
+    assert sent[-1]["role"] == "user"
+    assert sent[-1]["content"] == "msg-final"
+    middle = sent[1:-1]
+    assert len(middle) == HISTORY_TURNS
+
+
+@pytest.mark.asyncio
+async def test_index_text_in_system_prompt(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    captured: list[list[dict]] = []
+    import app.llm_router as llm_router_mod
+
+    real = llm_router_mod.litellm.acompletion
+
+    async def spy(**kwargs):
+        if kwargs.get("stream") is False:
+            captured.append(list(kwargs["messages"]))
+        return await real(**kwargs)
+
+    import pytest as _pytest
+
+    monkeypatch = _pytest.MonkeyPatch()
+    monkeypatch.setattr(llm_router_mod.litellm, "acompletion", spy)
+    try:
+        await pick_paths(
+            question="me fala da wiley",
+            history=[ChatMessage(role="user", content="me fala da wiley")],
+            lang="pt",
+            loader=loader,
+            providers=settings.provider_list,
+            settings=settings,
+        )
+    finally:
+        monkeypatch.undo()
+
+    system = captured[0][0]["content"]
+    assert "entities/wiley.md" in system  # raw index.md content embedded

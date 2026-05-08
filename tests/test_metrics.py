@@ -84,8 +84,8 @@ async def test_metrics_increment_on_successful_chat(client, mock_llm) -> None:
         {"kind": "completion", "model": "mock/primary"},
     )
     assert chats_after - chats_before == pytest.approx(1.0)
-    # mock_llm emits prompt=12, completion=7 in its usage chunk
-    assert p_tokens_after - p_tokens_before == pytest.approx(12.0)
+    # mock_llm emits prompt=8 (router) + 12 (answer) on the same model.
+    assert p_tokens_after - p_tokens_before == pytest.approx(20.0)
     assert c_tokens_after >= 7.0
     # Histogram observation now present
     assert "chat_api_chat_duration_seconds_bucket" in after_body
@@ -201,7 +201,10 @@ async def test_db_persists_user_name_on_session(client, mock_llm) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_provider_failure_then_fallback(client, mock_llm) -> None:
-    mock_llm.behaviour["mock/primary"] = "raise_open"
+    # Primary fails on the streaming (answer) phase. Router still picks via
+    # primary, so we expect exactly one open-failure on primary (the answer
+    # call) and a successful answer call on secondary.
+    mock_llm.stream_behaviour["mock/primary"] = "raise_open"
     before = metric_value(
         (await client.get("/metrics", headers={"host": "127.0.0.1"})).text,
         "chat_api_provider_failures_total",

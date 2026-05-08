@@ -103,6 +103,18 @@ class WikiLoader:
     def get_page(self, relative_path: str) -> WikiPage | None:
         return self.load().pages.get(relative_path)
 
+    def index_text(self) -> str:
+        """Return the raw content of ``index.md`` (empty if missing).
+
+        Used by the LLM router so the model can browse the catalog itself
+        and pick relevant pages — no parsing on our side.
+        """
+        self.load()
+        index_path = self._resolve_root() / "index.md"
+        if not index_path.is_file():
+            return ""
+        return index_path.read_text(encoding="utf-8")
+
     # --- internals ------------------------------------------------------
 
     def _resolve_root(self) -> Path:

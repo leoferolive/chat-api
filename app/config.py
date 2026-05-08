@@ -55,12 +55,16 @@ class Settings(BaseSettings):
     max_user_message_chars: int = 800
     max_messages_per_request: int = 20
 
-    # Cap on completion length. Keeps responses concise and bounded.
-    llm_max_tokens: int = 400
+    # Cap on completion length. Persona forces synthesis; this is the safety
+    # net so a runaway model can't dump a 10k-token essay.
+    llm_max_tokens: int = 1000
+
+    # Cap for the (non-streaming) LLM router call. It returns a small JSON
+    # object (`{"paths":[...]}`), so a few hundred tokens is more than enough.
+    router_max_tokens: int = 200
 
     llm_providers: str = "gemini/gemini-2.5-flash,openrouter/anthropic/claude-haiku-4.5"
 
-    retriever_top_n: int = 5
     wiki_poll_seconds: int = 60
 
     # API keys are read directly by LiteLLM from env, but we surface them so
