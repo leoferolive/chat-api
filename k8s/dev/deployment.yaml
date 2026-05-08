@@ -17,6 +17,12 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      securityContext:
+        # fsGroup 65533 = UID do git-sync. Kubelet aplica chgrp recursivo no
+        # volume e injeta o GID como supplementary group em todos os containers
+        # do Pod, permitindo que o app (UID diferente) leia o que o git-sync
+        # escreve sem depender de bits "other".
+        fsGroup: 65533
       volumes:
         - name: wiki
           persistentVolumeClaim:
@@ -32,35 +38,44 @@ spec:
             - -c
             - |
               set -eu
-              # Preparar subdir dedicado pro git-sync. Idempotente:
-              # se /wiki/repo já existe (gerado pelo git-sync em runs
-              # anteriores), preservamos. Limpamos resíduos do init
-              # antigo wiki-clone que viviam em /wiki/.
+              # Idempotente: garante /wiki/repo existindo e limpa qualquer
+              # resíduo legado na raiz do PVC (do init wiki-clone antigo ou
+              # de mudanças futuras no repo upstream). Blocklist preserva
+              # apenas /wiki/repo e /wiki/lost+found.
               mkdir -p /wiki/repo
-              for entry in /wiki/.git /wiki/wiki /wiki/AGENTS.md /wiki/README.md /wiki/raw /wiki/.gitignore; do
-                if [ -e "$entry" ]; then
-                  echo "[wiki-prep] removing legacy $entry"
-                  rm -rf "$entry"
-                fi
+              for entry in /wiki/* /wiki/.[!.]*; do
+                [ -e "$entry" ] || continue
+                case "$entry" in
+                  /wiki/repo|/wiki/lost+found) ;;
+                  *)
+                    echo "[wiki-prep] removing legacy $entry"
+                    rm -rf "$entry"
+                    ;;
+                esac
               done
-              # git-sync exige UID 65533 dono do root.
               chown -R 65533:65533 /wiki/repo
           volumeMounts:
             - name: wiki
               mountPath: /wiki
           securityContext:
             runAsUser: 0
-      containers:
+        # Sidecar nativo (k8s >=1.29): restartPolicy: Always faz com que o
+        # crash do git-sync NÃO derrube o Pod inteiro. O container inicia em
+        # paralelo aos containers principais (não bloqueia readiness do app).
         - name: git-sync
           image: registry.k8s.io/git-sync/git-sync:v4.2.4
+          restartPolicy: Always
           args:
+            # --depth=1: wiki não precisa de histórico para servir conteúdo.
+            # --period=60s: combina com WIKI_POLL_SECONDS do app.
+            # --max-failures=3: tolera falhas transientes de rede/DNS.
             - --repo=https://github.com/leoferolive/leoferolive-wiki.git
             - --ref=main
             - --depth=1
             - --period=60s
             - --root=/wiki/repo
             - --link=current
-            - --error-file=.git-sync-error
+            - --error-file=/wiki/repo/.git-sync-error
             - --http-bind=:9102
             - --max-failures=3
             - -v=2
@@ -80,6 +95,14 @@ spec:
             runAsUser: 65533
             runAsNonRoot: true
             allowPrivilegeEscalation: false
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 9102
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+      containers:
         - name: chat-api-dev
           image: ghcr.io/leoferolive/chat-api-dev:latest
           imagePullPolicy: Always
