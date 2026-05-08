@@ -6,7 +6,7 @@ metadata:
 data:
   ENV: "prod"
   ALLOWED_ORIGINS: "https://leoferolive.com.br"
-  WIKI_DIR: "/wiki"
+  WIKI_DIR: "/wiki/repo/current"
   DB_PATH: "/data/chat.sqlite"
   # Turnstile temporarily disabled in prod until we finish debugging the
   # invisible-mode 403 in dev (`leoferolive-dev.leoferolive.com.br`).

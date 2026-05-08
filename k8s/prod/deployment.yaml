@@ -25,29 +25,60 @@ spec:
           persistentVolumeClaim:
             claimName: chat-api-db
       initContainers:
-        - name: wiki-clone
-          image: alpine/git:latest
+        - name: wiki-prep
+          image: busybox:1.36
           command:
             - /bin/sh
             - -c
             - |
               set -eu
-              REPO="https://github.com/leoferolive/leoferolive-wiki.git"
-              if [ -d /wiki/.git ]; then
-                echo "[wiki-clone] existing repo, pulling latest"
-                cd /wiki && git pull --depth 1 --ff-only
-              else
-                echo "[wiki-clone] fresh clone"
-                # Empty target may contain lost+found on some volumes — clone into temp then move.
-                rm -rf /wiki/* 2>/dev/null || true
-                git clone --depth 1 "$REPO" /tmp/wiki
-                cp -a /tmp/wiki/. /wiki/
-              fi
-              cd /wiki && git log -1 --oneline
+              # Preparar subdir dedicado pro git-sync. Idempotente:
+              # se /wiki/repo já existe (gerado pelo git-sync em runs
+              # anteriores), preservamos. Limpamos resíduos do init
+              # antigo wiki-clone que viviam em /wiki/.
+              mkdir -p /wiki/repo
+              for entry in /wiki/.git /wiki/wiki /wiki/AGENTS.md /wiki/README.md /wiki/raw /wiki/.gitignore; do
+                if [ -e "$entry" ]; then
+                  echo "[wiki-prep] removing legacy $entry"
+                  rm -rf "$entry"
+                fi
+              done
+              chown -R 65533:65533 /wiki/repo
           volumeMounts:
             - name: wiki
               mountPath: /wiki
+          securityContext:
+            runAsUser: 0
       containers:
+        - name: git-sync
+          image: registry.k8s.io/git-sync/git-sync:v4.2.4
+          args:
+            - --repo=https://github.com/leoferolive/leoferolive-wiki.git
+            - --ref=main
+            - --depth=1
+            - --period=60s
+            - --root=/wiki/repo
+            - --link=current
+            - --error-file=.git-sync-error
+            - --http-bind=:9102
+            - --max-failures=3
+            - -v=2
+          volumeMounts:
+            - name: wiki
+              mountPath: /wiki
+          ports:
+            - containerPort: 9102
+              name: git-sync-http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            runAsUser: 65533
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
         - name: chat-api
           image: ghcr.io/leoferolive/chat-api:latest
           imagePullPolicy: Always

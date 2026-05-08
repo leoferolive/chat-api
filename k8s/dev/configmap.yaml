@@ -6,7 +6,7 @@ metadata:
 data:
   ENV: "dev"
   ALLOWED_ORIGINS: "https://leoferolive-dev.leoferolive.com.br,http://localhost:5173"
-  WIKI_DIR: "/wiki"
+  WIKI_DIR: "/wiki/repo/current"
   DB_PATH: "/data/chat.sqlite"
   # Turnstile turned off — the invisible widget hung on real browsers
   # without ever resolving (TrustedTypes-related interaction inside the
