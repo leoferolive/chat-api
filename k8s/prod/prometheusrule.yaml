@@ -128,9 +128,11 @@ spec:
         - alert: ChatApiPodOOMKilled
           # `last_terminated_reason` mantém o motivo do último término por ~15min,
           # tempo suficiente para alertar mesmo após o pod reiniciar.
+          # `for: 1m` amortece reaberturas durante rolling restart enquanto
+          # o KSM ainda está republicando a série pós-resolve.
           expr: |
             kube_pod_container_status_last_terminated_reason{namespace="chat-api",container="chat-api",reason="OOMKilled"} == 1
-          for: 0m
+          for: 1m
           labels:
             severity: critical
             namespace: chat-api
@@ -174,12 +176,19 @@ spec:
             description: "Pod {{ $labels.pod }} usando {{ $value | humanizePercentage }} do memory limit há 10min — risco de OOM."
 
         - alert: ChatApiPodCpuThrottling
+          # Fração de períodos CFS efetivamente throttled — mais robusta que
+          # threshold absoluto em segundos. Independe do valor de cpu.limit:
+          # em pods com limit=500m, 0.5 s/s seria saturação; em limit=2,
+          # apenas 25%. 25% dos períodos throttled é o ponto onde a app
+          # claramente sente impacto na latência.
           expr: |
-            rate(container_cpu_cfs_throttled_seconds_total{namespace="chat-api",container="chat-api"}[5m]) > 0.5
+            rate(container_cpu_cfs_throttled_periods_total{namespace="chat-api",container="chat-api"}[5m])
+              /
+            rate(container_cpu_cfs_periods_total{namespace="chat-api",container="chat-api"}[5m]) > 0.25
           for: 10m
           labels:
             severity: warning
             namespace: chat-api
           annotations:
             summary: "chat-api: CPU throttling significativo"
-            description: "Pod {{ $labels.pod }} com {{ $value | humanize }}s/s de throttle de CPU há 10min — aumentar cpu limit."
+            description: "Pod {{ $labels.pod }} com {{ $value | humanizePercentage }} dos períodos CFS throttled há 10min — aumentar cpu limit."
