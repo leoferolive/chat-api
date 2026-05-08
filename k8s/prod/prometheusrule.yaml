@@ -101,12 +101,12 @@ spec:
             description: "p95: {{ $value | humanizeDuration }} nos últimos 5min."
 
         - alert: ChatApiPodNotReady
-          # `on(namespace, pod)` is required — `on(pod)` alone matches pods of
-          # the same name in other namespaces and produces a many-to-many error.
+          # O namespace chat-api contém apenas pods do chat-api, então filtrar
+          # por namespace é suficiente — sem necessidade de join com
+          # kube_pod_labels (que esta instalação do KSM não expõe por default,
+          # já que --metric-labels-allowlist não está habilitado para pods).
           expr: |
             kube_pod_status_ready{namespace="chat-api",condition="true"} == 0
-              and on(namespace, pod)
-            kube_pod_labels{namespace="chat-api",label_app="chat-api"} == 1
           for: 5m
           labels:
             severity: critical
