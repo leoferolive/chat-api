@@ -36,3 +36,4 @@ data/
 # Real Kubernetes Secrets — only the *.template.yaml files belong in git.
 k8s/**/secret.yaml
 k8s/**/secrets.yaml
+.claude/worktrees/

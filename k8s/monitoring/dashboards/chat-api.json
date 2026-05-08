@@ -195,12 +195,12 @@
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
-          "expr": "sum(kube_pod_status_ready{namespace=~\"$namespace\",condition=\"true\"} and on(namespace,pod) kube_pod_labels{namespace=~\"$namespace\",label_app=\"chat-api\"})",
+          "expr": "sum(kube_pod_status_ready{namespace=~\"$namespace\",condition=\"true\"})",
           "legendFormat": "ready",
           "refId": "A"
         },
         {
-          "expr": "sum(kube_pod_labels{namespace=~\"$namespace\",label_app=\"chat-api\"})",
+          "expr": "count(kube_pod_info{namespace=~\"$namespace\"})",
           "legendFormat": "total",
           "refId": "B"
         }
@@ -296,6 +296,6 @@
   "timezone": "America/Sao_Paulo",
   "title": "chat-api",
   "uid": "chat-api",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
