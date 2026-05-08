@@ -137,3 +137,74 @@ async def test_zai_prefix_routes_to_openai_compatible(
     assert captured["model"] == "openai/glm-4.6"
     assert captured["kwargs"]["api_base"] == "https://api.z.ai/api/paas/v4/"
     assert captured["kwargs"]["api_key"] == "test-zai-key"
+
+
+# ---- complete_once (non-streaming) -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_complete_once_returns_text_and_attempts(mock_llm) -> None:
+    from app.llm_router import complete_once
+
+    mock_llm.router_response = '{"answer": "hi"}'
+    result = await complete_once(
+        [{"role": "user", "content": "hi"}],
+        ["mock/primary", "mock/secondary"],
+        max_tokens=50,
+        response_format={"type": "json_object"},
+    )
+    assert result["text"] == '{"answer": "hi"}'
+    assert result["model"] == "mock/primary"
+    assert result["attempts"] == ["mock/primary"]
+    assert result["tokens"] == {"prompt": 8, "completion": 3}
+
+
+@pytest.mark.asyncio
+async def test_complete_once_failover(mock_llm) -> None:
+    from app.llm_router import complete_once
+
+    mock_llm.router_behaviour["mock/primary"] = "raise_open"
+    result = await complete_once(
+        [{"role": "user", "content": "hi"}],
+        ["mock/primary", "mock/secondary"],
+        max_tokens=50,
+    )
+    assert result["model"] == "mock/secondary"
+    assert result["attempts"] == ["mock/primary", "mock/secondary"]
+
+
+@pytest.mark.asyncio
+async def test_complete_once_all_fail_raises(mock_llm) -> None:
+    from app.llm_router import complete_once
+
+    mock_llm.router_behaviour["mock/primary"] = "raise_open"
+    mock_llm.router_behaviour["mock/secondary"] = "raise_open"
+    with pytest.raises(AllProvidersFailed):
+        await complete_once(
+            [{"role": "user", "content": "hi"}],
+            ["mock/primary", "mock/secondary"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_complete_once_passes_response_format(monkeypatch) -> None:
+    from app import llm_router as llm_router_mod
+    from app.llm_router import complete_once
+
+    captured: dict = {}
+
+    async def capturing(**kwargs):
+        captured.update(kwargs)
+        return {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    monkeypatch.setattr(llm_router_mod.litellm, "acompletion", capturing)
+    await complete_once(
+        [{"role": "user", "content": "hi"}],
+        ["mock/primary"],
+        response_format={"type": "json_object"},
+    )
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["stream"] is False

@@ -53,7 +53,9 @@ async def test_chat_stream_happy_path(client, mock_llm) -> None:
 
 @pytest.mark.asyncio
 async def test_chat_stream_provider_fallback(client, mock_llm) -> None:
-    mock_llm.behaviour["mock/primary"] = "raise_open"
+    # Primary fails on the (streaming) answer phase only — router still
+    # picks pages successfully via primary.
+    mock_llm.stream_behaviour["mock/primary"] = "raise_open"
     body = {
         "sessionId": "22222222-2222-4222-8222-222222222222",
         "messages": [{"role": "user", "content": "Wiley?"}],
@@ -64,23 +66,55 @@ async def test_chat_stream_provider_fallback(client, mock_llm) -> None:
     events = parse_sse_events(resp.text)
     done = [e for e in events if e["type"] == "done"][0]
     assert done["model"] == "mock/secondary"
-    assert mock_llm.calls == ["mock/primary", "mock/secondary"]
+    # Answer phase: primary failed-open before producing tokens, secondary
+    # succeeded. `stream_calls` only records reaches that produced a stream.
+    assert mock_llm.stream_calls == ["mock/secondary"]
+    # The full call list includes the failed primary attempt on the answer.
+    assert mock_llm.calls.count("mock/primary") == 2  # router OK + answer fail
+    assert mock_llm.calls.count("mock/secondary") == 1  # answer success
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_all_providers_fail(client, mock_llm) -> None:
-    mock_llm.behaviour["mock/primary"] = "raise_open"
-    mock_llm.behaviour["mock/secondary"] = "raise_open"
+async def test_chat_stream_all_stream_providers_fail(client, mock_llm) -> None:
+    # Router succeeds (default), but every provider fails on the answer
+    # streaming phase. We expect an `error` SSE event.
+    mock_llm.stream_behaviour["mock/primary"] = "raise_open"
+    mock_llm.stream_behaviour["mock/secondary"] = "raise_open"
     body = {
         "sessionId": "33333333-3333-4333-8333-333333333333",
         "messages": [{"role": "user", "content": "anything"}],
         "lang": "pt",
     }
     resp = await client.post("/chat/stream", json=body)
-    # SSE response is still 200; the error event is in the body.
     assert resp.status_code == 200
     events = parse_sse_events(resp.text)
     assert any(e["type"] == "error" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_router_refuses_out_of_scope(client, mock_llm) -> None:
+    # Router decides nothing in the wiki is relevant — we should refuse
+    # without invoking the answer LLM at all.
+    mock_llm.router_response = '{"paths": []}'
+    body = {
+        "sessionId": "55555555-5555-4555-8555-555555555555",
+        "messages": [{"role": "user", "content": "qual a capital da frança?"}],
+        "lang": "pt",
+    }
+    resp = await client.post("/chat/stream", json=body)
+    assert resp.status_code == 200
+    events = parse_sse_events(resp.text)
+    types = [e["type"] for e in events]
+    assert types == ["token", "done"]  # refusal token + done, no error
+    # No streaming call was made.
+    assert mock_llm.stream_calls == []
+    # Refusal text is the persona's fallback line.
+    refusal = events[0]["value"]
+    assert "não tenho essa informação" in refusal.lower()
+    # Router still consumed a provider call — daily counter must reflect it,
+    # otherwise off-topic floods would never trip the cost gate.
+    db = client.app.state.db  # type: ignore[attr-defined]
+    assert (await db.count_calls_today()) >= 1
 
 
 @pytest.mark.asyncio

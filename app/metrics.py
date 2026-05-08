@@ -55,6 +55,18 @@ DAILY_CALLS = Gauge(
     "Current count of LLM calls made today (UTC).",
 )
 
+ROUTER_OUTCOME_TOTAL = Counter(
+    "chat_api_router_outcome_total",
+    "Outcomes of the LLM router that picks wiki pages per question.",
+    labelnames=("outcome",),  # ok | empty | parse_error | provider_error
+)
+
+ROUTER_SELECTED_PAGES = Histogram(
+    "chat_api_router_selected_pages",
+    "Number of wiki pages chosen by the LLM router per request.",
+    buckets=(0, 1, 2, 3, 4, 5),
+)
+
 INFO = Info(
     "chat_api",
     "Build/runtime info for chat-api.",

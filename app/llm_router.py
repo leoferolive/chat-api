@@ -159,6 +159,109 @@ async def stream_completion(
     )
 
 
+async def complete_once(
+    messages: list[dict],
+    providers: list[str],
+    *,
+    temperature: float = 0.0,
+    max_tokens: int = 200,
+    response_format: dict | None = None,
+) -> dict:
+    """Run a single non-streaming completion with provider failover.
+
+    Used for short classification-style calls (e.g. the LLM-based router).
+    Returns ``{"text", "model", "tokens": {...}, "attempts": [...]}``.
+    Raises ``AllProvidersFailed`` if no provider produces a response.
+    """
+    if not providers:
+        raise AllProvidersFailed("no providers configured")
+
+    attempts: list[str] = []
+    last_err: Exception | None = None
+
+    for model in providers:
+        attempts.append(model)
+        litellm_model, extra = _provider_kwargs(model)
+        kwargs: dict = {
+            "model": litellm_model,
+            "messages": messages,
+            "stream": False,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            **extra,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        try:
+            resp = await litellm.acompletion(**kwargs)
+        except Exception as exc:  # noqa: BLE001 — try next provider
+            logger.warning("llm_complete_once_failed", model=model, err=str(exc))
+            PROVIDER_FAILURES_TOTAL.labels(model=model, phase="open").inc()
+            PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
+            last_err = exc
+            continue
+
+        text, prompt_tokens, completion_tokens = _extract_response(resp)
+        PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="success").inc()
+        if prompt_tokens:
+            TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
+        if completion_tokens:
+            TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
+        return {
+            "text": text,
+            "model": model,
+            "tokens": {
+                "prompt": prompt_tokens,
+                "completion": completion_tokens,
+            },
+            "attempts": attempts,
+        }
+
+    raise AllProvidersFailed(
+        f"all providers failed: attempts={attempts} last_err={last_err!r}"
+    )
+
+
+def _extract_response(resp: object) -> tuple[str, int, int]:
+    """Pull (text, prompt_tokens, completion_tokens) from a non-streamed reply."""
+    text = ""
+    prompt_tokens = 0
+    completion_tokens = 0
+
+    choices = getattr(resp, "choices", None)
+    if choices is None and isinstance(resp, dict):
+        choices = resp.get("choices")
+
+    if choices:
+        first = choices[0]
+        message = getattr(first, "message", None)
+        if message is None and isinstance(first, dict):
+            message = first.get("message")
+        if message is not None:
+            content = getattr(message, "content", None)
+            if content is None and isinstance(message, dict):
+                content = message.get("content")
+            if content:
+                text = content
+
+    usage = getattr(resp, "usage", None)
+    if usage is None and isinstance(resp, dict):
+        usage = resp.get("usage")
+    if usage:
+        prompt_tokens = (
+            getattr(usage, "prompt_tokens", None)
+            or (usage.get("prompt_tokens") if isinstance(usage, dict) else 0)
+            or 0
+        )
+        completion_tokens = (
+            getattr(usage, "completion_tokens", None)
+            or (usage.get("completion_tokens") if isinstance(usage, dict) else 0)
+            or 0
+        )
+
+    return text, prompt_tokens, completion_tokens
+
+
 def _extract_chunk(chunk: object) -> tuple[str, int, int]:
     """Pull (text, prompt_tokens, completion_tokens) from a litellm chunk.
 

@@ -39,8 +39,8 @@ from .metrics import (
     set_info,
 )
 from .models import ChatRequest
-from .prompt import build_messages
-from .retriever import Retriever
+from .prompt import build_messages, refusal_text
+from .router import pick_paths
 from .sse import build_response, sse_payload
 from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name
 from .wiki_loader import WikiLoader
@@ -81,13 +81,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _configure_logging()
 
     loader = WikiLoader(settings.wiki_dir, poll_seconds=settings.wiki_poll_seconds)
-    retriever = Retriever(loader)
     db = Database(settings.db_path)
     await db.connect()
 
     app.state.settings = settings
     app.state.wiki_loader = loader
-    app.state.retriever = retriever
     app.state.db = db
 
     DAILY_CALLS.set(await db.count_calls_today())
@@ -157,7 +155,7 @@ async def _handle_chat_stream(
 ) -> Response:
     started = time.monotonic()
     db: Database = request.app.state.db
-    retriever: Retriever = request.app.state.retriever
+    loader: WikiLoader = request.app.state.wiki_loader
 
     ip = client_ip(request)
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
@@ -248,12 +246,70 @@ async def _handle_chat_stream(
             )
         )
 
-    # Retrieve wiki context.
-    pages = retriever.pick(user_msg.content, body.lang, top_n=settings.retriever_top_n)
-    messages_for_llm = build_messages(body.lang, pages, body.messages)
-
-    # Bump call counter just before invoking the LLM.
+    # Bump the daily call counter once per turn, BEFORE the router runs.
+    # The router itself spends a provider call even when the answer LLM is
+    # short-circuited (refusal path). If we incremented only on the answer
+    # path, off-topic floods would never trip the daily cost gate.
     await db.increment_calls_today()
+
+    # LLM router: ask the model itself which wiki pages to ground on.
+    selected_paths = await pick_paths(
+        question=user_msg.content,
+        history=body.messages,
+        lang=body.lang,
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+
+    if not selected_paths:
+        # Out of scope (or router failed): refuse without invoking the answer
+        # LLM. The router call itself was already counted above.
+        refusal = refusal_text(body.lang)
+        # Persist the assistant turn so the UI shows it on reload.
+        asyncio.create_task(
+            db.save_turn(
+                session_id=body.sessionId,
+                role="assistant",
+                content=refusal,
+            )
+        )
+        CHATS_TOTAL.labels(
+            status="refused",
+            model=UNKNOWN_MODEL,
+            lang=body.lang,
+            user=user_label,
+        ).inc()
+        log.info(
+            "router_refused",
+            session_id=body.sessionId,
+            lang=body.lang,
+            user=user_label,
+        )
+
+        async def refusal_gen():
+            yield {"data": sse_payload({"type": "token", "value": refusal})}
+            yield {
+                "data": sse_payload(
+                    {"type": "done", "model": UNKNOWN_MODEL, "tokens": {"prompt": 0, "completion": 0}}
+                )
+            }
+
+        response = build_response(refusal_gen())
+        if is_first_message:
+            token = issue_session_token(body.sessionId, settings)
+            response.set_cookie(
+                SESSION_COOKIE,
+                token,
+                httponly=True,
+                samesite="lax",
+                secure=settings.env == "prod",
+                max_age=settings.session_ttl_seconds,
+            )
+        return response
+
+    pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
+    messages_for_llm = build_messages(body.lang, pages, body.messages)
 
     async def event_gen() -> AsyncIterator[dict]:
         model_used = ""

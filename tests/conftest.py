@@ -93,19 +93,37 @@ def settings(temp_wiki: Path, temp_db_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 class MockState:
-    """Lets tests script provider behaviour."""
+    """Lets tests script provider behaviour.
+
+    `behaviour` applies to BOTH router (stream=False) and answer (stream=True)
+    calls of a given model. Use `stream_behaviour` / `router_behaviour` to
+    target one phase only.
+    """
 
     def __init__(self) -> None:
-        # provider -> "ok" | "raise_open" | "raise_mid"
+        # provider -> "ok" | "raise_open" | "raise_mid" — applies to both phases
         self.behaviour: dict[str, str] = {}
-        # tokens to emit when ok
+        # phase-specific overrides; consulted before `behaviour`.
+        self.stream_behaviour: dict[str, str] = {}
+        self.router_behaviour: dict[str, str] = {}
+        # tokens to emit when ok (streaming path)
         self.tokens: list[str] = ["Hello ", "world", "!"]
+        # JSON body returned by the (non-streaming) router call.
+        # Default selects the wiley entity page from the fixture.
+        self.router_response: str = '{"paths": ["entities/wiley.md"]}'
         self.calls: list[str] = []
+        self.router_calls: list[str] = []
+        self.stream_calls: list[str] = []
 
     def reset(self) -> None:
         self.behaviour.clear()
+        self.stream_behaviour.clear()
+        self.router_behaviour.clear()
         self.tokens = ["Hello ", "world", "!"]
+        self.router_response = '{"paths": ["entities/wiley.md"]}'
         self.calls.clear()
+        self.router_calls.clear()
+        self.stream_calls.clear()
 
 
 @pytest.fixture
@@ -114,9 +132,20 @@ def mock_llm(monkeypatch: pytest.MonkeyPatch) -> MockState:
 
     async def fake_acompletion(*, model: str, messages, stream=True, **kwargs):
         state.calls.append(model)
-        behaviour = state.behaviour.get(model, "ok")
+        phase_map = state.stream_behaviour if stream else state.router_behaviour
+        behaviour = phase_map.get(model, state.behaviour.get(model, "ok"))
         if behaviour == "raise_open":
             raise RuntimeError(f"open-failure for {model}")
+
+        if not stream:
+            # Router-style non-streaming call: respond with the scripted JSON.
+            state.router_calls.append(model)
+            return {
+                "choices": [{"message": {"content": state.router_response}}],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 3},
+            }
+
+        state.stream_calls.append(model)
 
         async def gen():
             if behaviour == "raise_mid":
