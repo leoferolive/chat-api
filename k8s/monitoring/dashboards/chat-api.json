@@ -176,6 +176,85 @@
       ],
       "title": "Distribuição por idioma",
       "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 40},
+      "id": 15,
+      "panels": [],
+      "title": "Pod overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 41},
+      "id": 11,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_ready{namespace=~\"$namespace\",condition=\"true\"} and on(namespace,pod) kube_pod_labels{namespace=~\"$namespace\",label_app=\"chat-api\"})",
+          "legendFormat": "ready",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(kube_pod_labels{namespace=~\"$namespace\",label_app=\"chat-api\"})",
+          "legendFormat": "total",
+          "refId": "B"
+        }
+      ],
+      "title": "Pods ready / total",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 18, "x": 6, "y": 41},
+      "id": 12,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
+      "targets": [
+        {
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\",container=\"chat-api\"}[15m]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Restarts (15m, por pod)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "color": {"mode": "palette-classic"}, "min": 0, "max": 1}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "id": 13,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{namespace=~\"$namespace\",container=\"chat-api\"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace=~\"$namespace\",container=\"chat-api\",resource=\"memory\"}",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Memória: usage / limit (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "id": 14,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "expr": "rate(container_cpu_cfs_throttled_seconds_total{namespace=~\"$namespace\",container=\"chat-api\"}[5m])",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU throttling (rate)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -217,6 +296,6 @@
   "timezone": "America/Sao_Paulo",
   "title": "chat-api",
   "uid": "chat-api",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
