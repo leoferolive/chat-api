@@ -59,9 +59,12 @@ class Settings(BaseSettings):
     # net so a runaway model can't dump a 10k-token essay.
     llm_max_tokens: int = 1000
 
-    # Cap for the (non-streaming) LLM router call. It returns a small JSON
-    # object (`{"paths":[...]}`), so a few hundred tokens is more than enough.
-    router_max_tokens: int = 200
+    # Cap for the (non-streaming) LLM router call. The JSON itself is tiny
+    # (`{"paths":[...]}`), but Gemini 2.5 Flash spends thinking tokens against
+    # the same budget; 200 was being entirely consumed before the JSON was
+    # emitted in prod. 1500 leaves comfortable headroom without meaningfully
+    # inflating cost (router runs once per turn, temperature=0).
+    router_max_tokens: int = 1500
 
     llm_providers: str = "gemini/gemini-2.5-flash,openrouter/anthropic/claude-haiku-4.5"
 

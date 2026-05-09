@@ -187,6 +187,48 @@ async def test_complete_once_all_fail_raises(mock_llm) -> None:
 
 
 @pytest.mark.asyncio
+async def test_complete_once_validator_failover(mock_llm) -> None:
+    """When the validator rejects the primary's text, fail over to the next."""
+    import json
+
+    from app.llm_router import complete_once
+
+    mock_llm.router_response_by_model["mock/primary"] = "Here is the JSON requested"
+    mock_llm.router_response_by_model["mock/secondary"] = '{"paths": ["x.md"]}'
+    result = await complete_once(
+        [{"role": "user", "content": "hi"}],
+        ["mock/primary", "mock/secondary"],
+        validator=json.loads,
+    )
+    assert result["model"] == "mock/secondary"
+    assert result["attempts"] == ["mock/primary", "mock/secondary"]
+    assert result["validated"] == {"paths": ["x.md"]}
+    # Both providers were called for the router phase.
+    assert mock_llm.router_calls == ["mock/primary", "mock/secondary"]
+
+
+@pytest.mark.asyncio
+async def test_complete_once_validator_all_fail_raises(mock_llm) -> None:
+    """Every provider returning bogus text exhausts the loop and raises."""
+    import json
+
+    from app.llm_router import complete_once
+
+    mock_llm.router_response_by_model["mock/primary"] = "Here is the JSON"
+    mock_llm.router_response_by_model["mock/secondary"] = "still no JSON"
+    with pytest.raises(AllProvidersFailed) as ei:
+        await complete_once(
+            [{"role": "user", "content": "hi"}],
+            ["mock/primary", "mock/secondary"],
+            validator=json.loads,
+        )
+    # The exception must remember that the last failure was a validator one,
+    # so callers (pick_paths) can choose between provider_error and parse_error
+    # outcomes for dashboards.
+    assert getattr(ei.value, "last_phase", None) == "validate"
+
+
+@pytest.mark.asyncio
 async def test_complete_once_passes_response_format(monkeypatch) -> None:
     from app import llm_router as llm_router_mod
     from app.llm_router import complete_once
