@@ -177,6 +177,33 @@ async def test_falls_back_when_primary_returns_non_json(
 
 
 @pytest.mark.asyncio
+async def test_falls_back_when_primary_returns_non_object_json(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    """`"null"`, `"[]"`, `"42"` are valid JSON but don't match the router's
+    `{"paths": [...]}` contract. They must be treated as a parse failure so
+    the failover kicks in instead of silently refusing."""
+    for bogus in ('"null"', "null", "[]", "42", '"just a string"'):
+        mock_llm.reset()
+        mock_llm.router_response_by_model["mock/primary"] = bogus
+        mock_llm.router_response_by_model["mock/secondary"] = (
+            '{"paths": ["entities/wiley.md"]}'
+        )
+        paths = await pick_paths(
+            question=f"qualquer coisa ({bogus})",
+            history=[ChatMessage(role="user", content="qualquer coisa")],
+            lang="pt",
+            loader=loader,
+            providers=settings.provider_list,
+            settings=settings,
+        )
+        assert paths == ["entities/wiley.md"], f"failed for bogus={bogus!r}"
+        assert mock_llm.router_calls == ["mock/primary", "mock/secondary"], (
+            f"failover did not fire for bogus={bogus!r}"
+        )
+
+
+@pytest.mark.asyncio
 async def test_parse_error_outcome_only_when_all_providers_fail_validation(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:

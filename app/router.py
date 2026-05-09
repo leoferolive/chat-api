@@ -23,6 +23,20 @@ logger = structlog.get_logger(__name__)
 MAX_PATHS = 5
 HISTORY_TURNS = 4
 
+
+def _parse_router_json(text: str) -> dict:
+    """Strict validator for router responses.
+
+    `json.loads` alone happily accepts `"null"`, `"[]"`, `"42"` — none of
+    which match our `{"paths": [...]}` contract. Treat anything that isn't
+    a JSON object at the top level as a parse failure so the failover loop
+    can try the next provider instead of silently refusing.
+    """
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"router returned non-object JSON: {type(parsed).__name__}")
+    return parsed
+
 _SYSTEM_PT = """Você é um classificador. Seu único trabalho é ler o índice da wiki sobre o Leonardo Ferolla e decidir quais páginas são necessárias para responder à pergunta do usuário.
 
 Regras:
@@ -132,7 +146,7 @@ async def pick_paths(
             temperature=0.0,
             max_tokens=settings.router_max_tokens,
             response_format={"type": "json_object"},
-            validator=json.loads,
+            validator=_parse_router_json,
         )
     except AllProvidersFailed as exc:
         # Distinguish "every provider crashed at the API level" from "every
