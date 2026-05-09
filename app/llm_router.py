@@ -8,8 +8,9 @@ caller (we don't restart mid-stream).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from typing import Any
 
 import litellm
 import structlog
@@ -54,7 +55,17 @@ class StreamResult:
 
 
 class AllProvidersFailed(RuntimeError):
-    """Raised when every configured provider errored before producing a token."""
+    """Raised when every configured provider errored before producing a token.
+
+    ``last_phase`` carries the kind of the final failure so callers can
+    classify dashboard outcomes — ``"open"`` for transport / API errors and
+    ``"validate"`` when the provider responded but the validator rejected it
+    (e.g. malformed JSON from a model that ignored ``response_format``).
+    """
+
+    def __init__(self, message: str, *, last_phase: str = "open") -> None:
+        super().__init__(message)
+        self.last_phase = last_phase
 
 
 async def stream_completion(
@@ -166,11 +177,18 @@ async def complete_once(
     temperature: float = 0.0,
     max_tokens: int = 200,
     response_format: dict | None = None,
+    validator: Callable[[str], Any] | None = None,
 ) -> dict:
     """Run a single non-streaming completion with provider failover.
 
     Used for short classification-style calls (e.g. the LLM-based router).
-    Returns ``{"text", "model", "tokens": {...}, "attempts": [...]}``.
+    When ``validator`` is supplied it runs against the response text after a
+    successful API call. If it raises, the response is treated as a failure
+    of that provider and the next one is tried — same behaviour as a transport
+    error, but tracked under ``phase="validate"``. The validator's return
+    value (if any) is surfaced in the result as ``"validated"``.
+
+    Returns ``{"text", "model", "tokens": {...}, "attempts": [...], "validated"?}``.
     Raises ``AllProvidersFailed`` if no provider produces a response.
     """
     if not providers:
@@ -178,6 +196,7 @@ async def complete_once(
 
     attempts: list[str] = []
     last_err: Exception | None = None
+    last_phase: str = "open"
 
     for model in providers:
         attempts.append(model)
@@ -199,15 +218,41 @@ async def complete_once(
             PROVIDER_FAILURES_TOTAL.labels(model=model, phase="open").inc()
             PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
             last_err = exc
+            last_phase = "open"
             continue
 
         text, prompt_tokens, completion_tokens = _extract_response(resp)
+
+        validated: Any = None
+        if validator is not None:
+            try:
+                validated = validator(text)
+            except Exception as exc:  # noqa: BLE001 — try next provider
+                logger.warning(
+                    "llm_complete_once_validate_failed",
+                    model=model,
+                    err=str(exc),
+                    text=(text or "")[:200],
+                )
+                PROVIDER_FAILURES_TOTAL.labels(model=model, phase="validate").inc()
+                PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
+                # Token usage is still recorded — the provider did spend tokens.
+                if prompt_tokens:
+                    TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
+                if completion_tokens:
+                    TOKENS_TOTAL.labels(kind="completion", model=model).inc(
+                        completion_tokens
+                    )
+                last_err = exc
+                last_phase = "validate"
+                continue
+
         PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="success").inc()
         if prompt_tokens:
             TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
         if completion_tokens:
             TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
-        return {
+        result: dict = {
             "text": text,
             "model": model,
             "tokens": {
@@ -216,9 +261,13 @@ async def complete_once(
             },
             "attempts": attempts,
         }
+        if validator is not None:
+            result["validated"] = validated
+        return result
 
     raise AllProvidersFailed(
-        f"all providers failed: attempts={attempts} last_err={last_err!r}"
+        f"all providers failed: attempts={attempts} last_err={last_err!r}",
+        last_phase=last_phase,
     )
 
 

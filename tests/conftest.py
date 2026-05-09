@@ -111,6 +111,10 @@ class MockState:
         # JSON body returned by the (non-streaming) router call.
         # Default selects the wiley entity page from the fixture.
         self.router_response: str = '{"paths": ["entities/wiley.md"]}'
+        # Per-provider override. When a model is in this map, the mock
+        # returns this string instead of `router_response`. Lets tests
+        # script "primary returns garbage, secondary returns JSON".
+        self.router_response_by_model: dict[str, str] = {}
         self.calls: list[str] = []
         self.router_calls: list[str] = []
         self.stream_calls: list[str] = []
@@ -121,6 +125,7 @@ class MockState:
         self.router_behaviour.clear()
         self.tokens = ["Hello ", "world", "!"]
         self.router_response = '{"paths": ["entities/wiley.md"]}'
+        self.router_response_by_model.clear()
         self.calls.clear()
         self.router_calls.clear()
         self.stream_calls.clear()
@@ -140,8 +145,9 @@ def mock_llm(monkeypatch: pytest.MonkeyPatch) -> MockState:
         if not stream:
             # Router-style non-streaming call: respond with the scripted JSON.
             state.router_calls.append(model)
+            body = state.router_response_by_model.get(model, state.router_response)
             return {
-                "choices": [{"message": {"content": state.router_response}}],
+                "choices": [{"message": {"content": body}}],
                 "usage": {"prompt_tokens": 8, "completion_tokens": 3},
             }
 

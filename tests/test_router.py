@@ -154,6 +154,90 @@ async def test_provider_failover(
 
 
 @pytest.mark.asyncio
+async def test_falls_back_when_primary_returns_non_json(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    """Reproduces the prod bug: Gemini answered 'Here is the JSON requested'
+    with no actual JSON. We must try the next provider instead of refusing."""
+    mock_llm.router_response_by_model["mock/primary"] = "Here is the JSON requested"
+    mock_llm.router_response_by_model["mock/secondary"] = (
+        '{"paths": ["entities/wiley.md"]}'
+    )
+    paths = await pick_paths(
+        question="me fala sobre wiley",
+        history=[ChatMessage(role="user", content="me fala sobre wiley")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == ["entities/wiley.md"]
+    # Both router calls happened (primary then secondary).
+    assert mock_llm.router_calls == ["mock/primary", "mock/secondary"]
+
+
+@pytest.mark.asyncio
+async def test_falls_back_when_primary_returns_non_object_json(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    """`"null"`, `"[]"`, `"42"` are valid JSON but don't match the router's
+    `{"paths": [...]}` contract. They must be treated as a parse failure so
+    the failover kicks in instead of silently refusing."""
+    for bogus in ('"null"', "null", "[]", "42", '"just a string"'):
+        mock_llm.reset()
+        mock_llm.router_response_by_model["mock/primary"] = bogus
+        mock_llm.router_response_by_model["mock/secondary"] = (
+            '{"paths": ["entities/wiley.md"]}'
+        )
+        paths = await pick_paths(
+            question=f"qualquer coisa ({bogus})",
+            history=[ChatMessage(role="user", content="qualquer coisa")],
+            lang="pt",
+            loader=loader,
+            providers=settings.provider_list,
+            settings=settings,
+        )
+        assert paths == ["entities/wiley.md"], f"failed for bogus={bogus!r}"
+        assert mock_llm.router_calls == ["mock/primary", "mock/secondary"], (
+            f"failover did not fire for bogus={bogus!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_parse_error_outcome_only_when_all_providers_fail_validation(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    """`outcome=parse_error` should fire only when *every* provider returned
+    non-JSON. A primary that fails validation but a secondary that succeeds
+    must report `outcome=ok`."""
+    from prometheus_client import REGISTRY
+
+    def value_for(outcome: str) -> float:
+        return REGISTRY.get_sample_value(
+            "chat_api_router_outcome_total", {"outcome": outcome}
+        ) or 0.0
+
+    parse_before = value_for("parse_error")
+    ok_before = value_for("ok")
+
+    mock_llm.router_response_by_model["mock/primary"] = "garbage"
+    mock_llm.router_response_by_model["mock/secondary"] = (
+        '{"paths": ["skills/backend.md"]}'
+    )
+    paths = await pick_paths(
+        question="skills do leonardo",
+        history=[ChatMessage(role="user", content="skills do leonardo")],
+        lang="pt",
+        loader=loader,
+        providers=settings.provider_list,
+        settings=settings,
+    )
+    assert paths == ["skills/backend.md"]
+    assert value_for("parse_error") - parse_before == pytest.approx(0.0)
+    assert value_for("ok") - ok_before == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
 async def test_all_providers_fail_returns_empty(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:
