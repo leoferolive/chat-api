@@ -1,13 +1,14 @@
-name: ci
+name: quality-ratchet
 
 on:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
-  quality:
+  ratchet:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +23,8 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras
 
-      - name: Quality gate
-        run: make quality
+      - name: Run coverage, update baseline if higher
+        run: bash scripts/update_baseline.sh
         env:
           ENV: ci
           TURNSTILE_DISABLED: "true"
@@ -31,9 +32,12 @@ jobs:
           SESSION_SECRET: "ci-secret"
           IP_HASH_SALT: "ci-salt"
 
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
+      - name: Commit ratchet
+        run: |
+          if [[ -n "$(git status --porcelain .quality/)" ]]; then
+            git config user.name "quality-ratchet"
+            git config user.email "ratchet@chat-api.local"
+            git add .quality/baseline.json
+            git commit -m "chore(ratchet): subir baseline de cobertura"
+            git push
+          fi
