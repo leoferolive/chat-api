@@ -97,7 +97,8 @@ async def test_metrics_cost_gate_counter(client) -> None:
     settings = client.app.state.settings  # type: ignore[attr-defined]
 
     before = metric_value(
-        (await client.get("/metrics", headers={"host": "127.0.0.1"})).text, "chat_api_cost_gate_hits_total"
+        (await client.get("/metrics", headers={"host": "127.0.0.1"})).text,
+        "chat_api_cost_gate_hits_total",
     )
     for _ in range(settings.daily_llm_call_limit):
         await db.increment_calls_today()
@@ -133,7 +134,11 @@ async def test_metrics_chat_user_label_set_when_userName_present(client, mock_ll
     # Find any chats_total line for status=ok and inspect the user label.
     user_label_seen = None
     for line in metrics_body.splitlines():
-        if line.startswith("chat_api_chats_total{") and 'status="ok"' in line and 'lang="pt"' in line:
+        if (
+            line.startswith("chat_api_chats_total{")
+            and 'status="ok"' in line
+            and 'lang="pt"' in line
+        ):
             m = re.search(r'user="([^"]+)"', line)
             if m and m.group(1) != "anonymous":
                 user_label_seen = m.group(1)

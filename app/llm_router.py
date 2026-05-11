@@ -46,6 +46,7 @@ def _provider_kwargs(model: str) -> tuple[str, dict]:
 @dataclass
 class StreamResult:
     """Aggregated stream output (yielded incrementally to callers)."""
+
     model: str
     text: str = ""
     prompt_tokens: int = 0
@@ -156,9 +157,7 @@ async def stream_completion(
         }
         return
 
-    raise AllProvidersFailed(
-        f"all providers failed: attempts={attempts} last_err={last_err!r}"
-    )
+    raise AllProvidersFailed(f"all providers failed: attempts={attempts} last_err={last_err!r}")
 
 
 async def complete_once(
@@ -219,9 +218,7 @@ async def complete_once(
             "attempts": attempts,
         }
 
-    raise AllProvidersFailed(
-        f"all providers failed: attempts={attempts} last_err={last_err!r}"
-    )
+    raise AllProvidersFailed(f"all providers failed: attempts={attempts} last_err={last_err!r}")
 
 
 def _extract_response(resp: object) -> tuple[str, int, int]:

@@ -162,9 +162,7 @@ class Database:
             (day,),
         )
         await self._conn.commit()
-        async with self._conn.execute(
-            "SELECT count FROM daily_calls WHERE day = ?", (day,)
-        ) as cur:
+        async with self._conn.execute("SELECT count FROM daily_calls WHERE day = ?", (day,)) as cur:
             row = await cur.fetchone()
         count = int(row[0]) if row else 0
         DAILY_CALLS.set(count)

@@ -73,8 +73,7 @@ def normalize_user_label(raw: str | None, *, salt: str) -> str:
     # otherwise a client could insert ZWJ/RTL marks inside a name to
     # split tokens and amplify the label cardinality.
     safe_chars = [
-        ch if _is_safe_name_char(ch) else (" " if ch.isspace() else "")
-        for ch in full_norm
+        ch if _is_safe_name_char(ch) else (" " if ch.isspace() else "") for ch in full_norm
     ]
     safe_str = "".join(safe_chars).strip()
     tokens = [t for t in safe_str.split() if t]

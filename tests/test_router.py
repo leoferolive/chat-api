@@ -16,9 +16,7 @@ def loader(settings: Settings) -> WikiLoader:
 
 
 @pytest.mark.asyncio
-async def test_returns_validated_paths(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_returns_validated_paths(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     mock_llm.router_response = '{"paths": ["entities/wiley.md", "skills/backend.md"]}'
     paths = await pick_paths(
         question="qual a stack do leonardo?",
@@ -70,9 +68,7 @@ async def test_drops_paths_unknown_to_loader(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:
     # only entities/wiley.md exists in the fixture; the other two are bogus
-    mock_llm.router_response = (
-        '{"paths": ["entities/wiley.md", "ghost/page.md", "../escape.md"]}'
-    )
+    mock_llm.router_response = '{"paths": ["entities/wiley.md", "ghost/page.md", "../escape.md"]}'
     paths = await pick_paths(
         question="me fala sobre wiley",
         history=[ChatMessage(role="user", content="me fala sobre wiley")],
@@ -92,9 +88,9 @@ async def test_invalid_paths_outcome_when_all_paths_bogus(
     from prometheus_client import REGISTRY
 
     def value_for(outcome: str) -> float:
-        return REGISTRY.get_sample_value(
-            "chat_api_router_outcome_total", {"outcome": outcome}
-        ) or 0.0
+        return (
+            REGISTRY.get_sample_value("chat_api_router_outcome_total", {"outcome": outcome}) or 0.0
+        )
 
     before = value_for("invalid_paths")
     mock_llm.router_response = '{"paths": ["ghost/x.md", "ghost/y.md"]}'
@@ -111,9 +107,7 @@ async def test_invalid_paths_outcome_when_all_paths_bogus(
 
 
 @pytest.mark.asyncio
-async def test_caps_at_max_paths(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_caps_at_max_paths(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     # Repeats are deduped first; pad with valid paths up to the cap.
     real = ["entities/wiley.md", "skills/backend.md"]
     # request 8 paths (some duplicates) — only valid + unique survive,
@@ -133,9 +127,7 @@ async def test_caps_at_max_paths(
 
 
 @pytest.mark.asyncio
-async def test_provider_failover(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_provider_failover(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     # primary fails, secondary returns valid JSON
     mock_llm.behaviour["mock/primary"] = "raise_open"
     mock_llm.router_response = '{"paths": ["skills/backend.md"]}'

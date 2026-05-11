@@ -161,9 +161,7 @@ async def _handle_chat_stream(
     ip = client_ip(request)
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
     user_raw = sanitize_user_name(body.userName)
-    user_label = cap_user_label(
-        normalize_user_label(body.userName, salt=settings.user_hash_salt)
-    )
+    user_label = cap_user_label(normalize_user_label(body.userName, salt=settings.user_hash_salt))
 
     # Turnstile / session enforcement BEFORE we touch the LLM.
     turnstile_ok = await verify_turnstile(body.turnstileToken, settings, remote_ip=ip)
@@ -234,9 +232,7 @@ async def _handle_chat_stream(
 
     # Persist session row + user turn (fire-and-forget).
     ip_hashed = ip_hashed_pre
-    asyncio.create_task(
-        db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw)
-    )
+    asyncio.create_task(db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw))
     user_msg = body.messages[-1]
     if user_msg.role == "user":
         asyncio.create_task(
@@ -292,7 +288,11 @@ async def _handle_chat_stream(
             yield {"data": sse_payload({"type": "token", "value": refusal})}
             yield {
                 "data": sse_payload(
-                    {"type": "done", "model": UNKNOWN_MODEL, "tokens": {"prompt": 0, "completion": 0}}
+                    {
+                        "type": "done",
+                        "model": UNKNOWN_MODEL,
+                        "tokens": {"prompt": 0, "completion": 0},
+                    }
                 )
             }
 
@@ -348,9 +348,9 @@ async def _handle_chat_stream(
                 lang=body.lang,
                 user=user_label,
             ).inc()
-            CHAT_DURATION_SECONDS.labels(
-                model=model_used or UNKNOWN_MODEL, status="error"
-            ).observe(time.monotonic() - started)
+            CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="error").observe(
+                time.monotonic() - started
+            )
             yield {"data": sse_payload({"type": "error", "message": "all_providers_failed"})}
             return
         except Exception as exc:  # noqa: BLE001
@@ -361,9 +361,9 @@ async def _handle_chat_stream(
                 lang=body.lang,
                 user=user_label,
             ).inc()
-            CHAT_DURATION_SECONDS.labels(
-                model=model_used or UNKNOWN_MODEL, status="error"
-            ).observe(time.monotonic() - started)
+            CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="error").observe(
+                time.monotonic() - started
+            )
             yield {"data": sse_payload({"type": "error", "message": "stream_failed"})}
             return
 
@@ -375,9 +375,9 @@ async def _handle_chat_stream(
             lang=body.lang,
             user=user_label,
         ).inc()
-        CHAT_DURATION_SECONDS.labels(
-            model=model_used or UNKNOWN_MODEL, status="ok"
-        ).observe(elapsed)
+        CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="ok").observe(
+            elapsed
+        )
         log.info(
             "chat_completed",
             session_id=body.sessionId,

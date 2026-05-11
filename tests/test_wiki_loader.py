@@ -82,9 +82,7 @@ def test_ignores_files_outside_wiki_subtree(temp_wiki: Path) -> None:
         "../AGENTS.md",
         "wiki/AGENTS.md",
     }
-    assert paths.isdisjoint(forbidden), (
-        f"retriever leaked non-wiki files: {paths & forbidden}"
-    )
+    assert paths.isdisjoint(forbidden), f"retriever leaked non-wiki files: {paths & forbidden}"
 
 
 def test_fallback_scopes_to_wiki_subdir(tmp_path: Path) -> None:

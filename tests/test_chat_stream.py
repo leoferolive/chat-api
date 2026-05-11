@@ -15,7 +15,7 @@ def parse_sse_events(body: str) -> list[dict]:
     for chunk in re.split(r"\n\n+", body.strip()):
         for line in chunk.splitlines():
             if line.startswith("data:"):
-                payload = line[len("data:"):].strip()
+                payload = line[len("data:") :].strip()
                 if not payload:
                     continue
                 try:
@@ -171,7 +171,8 @@ async def test_chat_stream_persists_messages(client) -> None:
     for _ in range(20):
         await asyncio.sleep(0.05)
         async with db._conn.execute(  # type: ignore[attr-defined]
-            "SELECT role FROM messages WHERE session_id = ?", ("66666666-6666-4666-8666-666666666666",)
+            "SELECT role FROM messages WHERE session_id = ?",
+            ("66666666-6666-4666-8666-666666666666",),
         ) as cur:
             rows = await cur.fetchall()
         if {r[0] for r in rows} >= {"user", "assistant"}:
