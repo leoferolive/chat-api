@@ -149,7 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-async def _handle_chat_stream(
+async def _handle_chat_stream(  # noqa: C901, PLR0915 — chat handler with auth, rate limits, cost gate, persistence; splitting fragments request lifecycle
     request: Request,
     body: ChatRequest,
     settings: Settings,

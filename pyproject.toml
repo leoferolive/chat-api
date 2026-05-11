@@ -51,8 +51,15 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "C90", "PLR0913", "PLR0915"]
 ignore = ["E501"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-statements = 50
 
 [tool.ruff.format]
 quote-style = "double"
