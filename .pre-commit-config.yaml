@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "-r", "app"]
+        additional_dependencies: ["bandit[toml]"]
+  - repo: local
+    hooks:
+      - id: pyright-changed
+        name: pyright (changed files)
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: true
