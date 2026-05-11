@@ -110,7 +110,9 @@ async def stream_completion(
         first_chunk_ok = False
         try:
             yield {"type": "start", "model": model}
-            async for chunk in stream:
+            # litellm.acompletion(stream=True) returns CustomStreamWrapper,
+            # but the union type with ModelResponse is not iterable in pyright's view.
+            async for chunk in stream:  # pyright: ignore[reportGeneralTypeIssues]  # LiteLLM stubs union
                 first_chunk_ok = True
                 token, p_tok, c_tok = _extract_chunk(chunk)
                 if p_tok:

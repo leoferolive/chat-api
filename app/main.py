@@ -113,7 +113,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RATE_LIMIT_HITS_TOTAL.inc()
         return _rate_limit_exceeded_handler(request, exc)
 
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+    # slowapi handler signature is narrower than FastAPI's ExceptionHandler protocol.
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # pyright: ignore[reportArgumentType]  # slowapi handler signature
 
     app.add_middleware(
         CORSMiddleware,

@@ -64,7 +64,7 @@ def build_messages(
     lang: str,
     pages: list[WikiPage],
     history: list[ChatMessage],
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """Compose the full message list for litellm.acompletion.
 
     Order: system persona → system wiki context → user/assistant history.
@@ -78,7 +78,7 @@ def build_messages(
     )
     system_wiki = f"{wiki_intro}\n\n{wiki_block}"
 
-    messages: list[dict] = [
+    messages: list[dict[str, str]] = [
         {"role": "system", "content": system_persona},
         {"role": "system", "content": system_wiki},
     ]
