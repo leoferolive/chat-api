@@ -38,6 +38,7 @@ packages = ["app"]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.409",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=7.1.0",
@@ -87,3 +88,28 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = ".coverage_html"
+
+[tool.pyright]
+include = ["app", "tests"]
+exclude = ["**/__pycache__", ".venv", "build", "dist"]
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = "warning"
+reportUnknownMemberType = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownArgumentType = "warning"
+reportMissingImports = "error"
+reportGeneralTypeIssues = "error"
+strict = [
+    "app/models.py",
+    "app/config.py",
+    "app/prompt.py",
+]
+
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = false
+reportUnknownMemberType = "none"
+reportArgumentType = "warning"
+reportGeneralTypeIssues = "warning"

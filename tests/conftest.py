@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -68,7 +68,9 @@ def temp_db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings(temp_wiki: Path, temp_db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
+def settings(
+    temp_wiki: Path, temp_db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Settings]:
     monkeypatch.setenv("WIKI_DIR", str(temp_wiki))
     monkeypatch.setenv("DB_PATH", str(temp_db_path))
     monkeypatch.setenv("TURNSTILE_DISABLED", "true")
