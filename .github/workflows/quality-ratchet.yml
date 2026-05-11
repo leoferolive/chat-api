@@ -1,0 +1,43 @@
+name: quality-ratchet
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --all-extras
+
+      - name: Run coverage, update baseline if higher
+        run: bash scripts/update_baseline.sh
+        env:
+          ENV: ci
+          TURNSTILE_DISABLED: "true"
+          LLM_PROVIDERS: "mock/primary,mock/secondary"
+          SESSION_SECRET: "ci-secret"
+          IP_HASH_SALT: "ci-salt"
+
+      - name: Commit ratchet
+        run: |
+          if [[ -n "$(git status --porcelain .quality/)" ]]; then
+            git config user.name "quality-ratchet"
+            git config user.email "ratchet@chat-api.local"
+            git add .quality/baseline.json
+            git commit -m "chore(ratchet): subir baseline de cobertura"
+            git push
+          fi
