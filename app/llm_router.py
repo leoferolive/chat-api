@@ -73,7 +73,7 @@ class AllProvidersFailed(RuntimeError):
         self.last_phase = last_phase
 
 
-async def stream_completion(
+async def stream_completion(  # noqa: C901, PLR0915 — orchestrates provider fallback + token aggregation; splitting hurts readability
     messages: list[dict],
     providers: list[str],
     *,
