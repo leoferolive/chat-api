@@ -54,6 +54,11 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
 ignore = ["E501"]
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
