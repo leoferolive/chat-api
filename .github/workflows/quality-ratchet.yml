@@ -1,16 +1,26 @@
-name: quality-ratchet
+name: Quality Ratchet Update
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: quality-ratchet-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   ratchet:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -23,7 +33,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras
 
-      - name: Run coverage, update baseline if higher
+      - name: Update baseline
         run: bash scripts/update_baseline.sh
         env:
           ENV: ci
@@ -32,12 +42,26 @@ jobs:
           SESSION_SECRET: "ci-secret"
           IP_HASH_SALT: "ci-salt"
 
-      - name: Commit ratchet
+      - name: Check for changes
+        id: check
         run: |
-          if [[ -n "$(git status --porcelain .quality/)" ]]; then
-            git config user.name "quality-ratchet"
-            git config user.email "ratchet@chat-api.local"
-            git add .quality/baseline.json
-            git commit -m "chore(ratchet): subir baseline de cobertura"
-            git push
+          if [ -n "$(git status --porcelain .quality/)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Create PR with baseline update
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: quality/baseline-update-${{ github.sha }}
+          title: "chore(quality): atualizar baseline do ratchet"
+          body: |
+            Atualização automática da baseline em `.quality/baseline.json`.
+            Disparada por merge de ${{ github.event.head_commit.message }}.
+          commit-message: "chore(quality): bump baseline do ratchet"
+          delete-branch: true
+          base: main
+          add-paths: |
+            .quality/baseline.json
