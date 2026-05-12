@@ -82,13 +82,34 @@ supressão exige comentário com a razão.
 
 Quando uma métrica numérica melhora em `main`, o workflow
 `.github/workflows/quality-ratchet.yml` atualiza
-`.quality/baseline.json` e commita direto na branch `main`. Threshold
-**só sobe** — se a próxima execução estiver abaixo do novo piso, o gate
-falha.
+`.quality/baseline.json` **via Pull Request** — não commita direto em
+`main`. Threshold **só sobe**: se a próxima execução estiver abaixo do
+novo piso, o gate falha.
 
-> **Atenção:** o workflow tem permissão `contents: write` e faz `git
-> push` em `main`. Antes de habilitar em produção, decidir se prefere
-> abrir PR de ratchet ao invés de commit direto.
+Fluxo concreto:
+
+1. Disparo: `push` em `main` ou `workflow_dispatch` manual.
+2. Roda `bash scripts/update_baseline.sh` (pytest + cobertura, recalcula
+   `coverage_line_pct` / `coverage_branch_pct`).
+3. Se `.quality/baseline.json` mudou, abre PR via
+   `peter-evans/create-pull-request@v6`, com branch
+   `quality/baseline-update-<sha>` apontando para `main` e título
+   `chore(quality): atualizar baseline do ratchet`.
+4. `concurrency.group: quality-ratchet-${{ github.ref }}` impede
+   execuções concorrentes no mesmo ref.
+5. Guard `if: github.actor != 'github-actions[bot]'` evita loop quando o
+   merge do PR de baseline dispararia o workflow de novo.
+
+> **Observação operacional.** PRs criados com o `GITHUB_TOKEN` default
+> **não disparam outros workflows** (limitação intencional do GitHub
+> Actions para evitar loops). Isso significa que o PR de
+> `baseline-update` aparece **sem checks de CI** automáticos. É uma
+> decisão consciente: a baseline-update mexe apenas em
+> `.quality/baseline.json` e o conteúdo já foi validado pelo run que
+> abriu o PR. Alternativa, se a política da org exigir checks no PR de
+> baseline, é configurar um **PAT** ou **GitHub App token** com escopo
+> de actions e passá-lo via `token:` para o
+> `peter-evans/create-pull-request` — fora do escopo desta entrega.
 
 ## pytest fora do pre-commit
 
