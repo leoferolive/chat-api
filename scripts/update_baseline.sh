@@ -30,8 +30,8 @@ coverage_path = Path("coverage.xml")
 
 tree = ET.parse(coverage_path)
 root = tree.getroot()
-line_pct = round(float(root.get("line-rate", "0")) * 100, 1)
-branch_pct = round(float(root.get("branch-rate", "0")) * 100, 1)
+line_pct = round(float(root.get("line-rate", "0")) * 100, 2)
+branch_pct = round(float(root.get("branch-rate", "0")) * 100, 2)
 
 current = json.loads(baseline_path.read_text())
 prev_line = float(current.get("coverage_line_pct", 0))
