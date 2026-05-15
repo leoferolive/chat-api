@@ -6,13 +6,82 @@ import pytest
 
 from app.config import Settings
 from app.models import ChatMessage
-from app.router import HISTORY_TURNS, MAX_PATHS, pick_paths
+from app.router import (
+    HISTORY_TURNS,
+    MAX_PATHS,
+    _extract_json_object,
+    _parse_router_json,
+    pick_paths,
+)
 from app.wiki_loader import WikiLoader
 
 
 @pytest.fixture
 def loader(settings: Settings) -> WikiLoader:
     return WikiLoader(settings.wiki_dir, poll_seconds=0)
+
+
+class TestExtractJsonObject:
+    """Direct unit coverage for the brace-balanced salvage scanner."""
+
+    def test_preamble_then_object(self) -> None:
+        text = 'Here is the JSON requested: {"paths": ["a.md"]}'
+        assert _extract_json_object(text) == '{"paths": ["a.md"]}'
+
+    def test_markdown_fence(self) -> None:
+        text = '```json\n{"paths": ["a.md"]}\n```'
+        assert _extract_json_object(text) == '{"paths": ["a.md"]}'
+
+    def test_trailing_prose(self) -> None:
+        text = '{"paths": []}\nLet me know if you need more.'
+        assert _extract_json_object(text) == '{"paths": []}'
+
+    def test_nested_object_balanced(self) -> None:
+        text = 'note: {"paths": [], "meta": {"k": "v"}} done'
+        assert _extract_json_object(text) == '{"paths": [], "meta": {"k": "v"}}'
+
+    def test_brace_inside_string_value(self) -> None:
+        # A '{' or '}' inside a JSON string must NOT move the brace depth,
+        # otherwise a perfectly valid object is discarded and we waste a
+        # failover round-trip (the whole point of salvage is to avoid that).
+        text = 'Resposta: {"paths": ["a.md"], "note": "usa {chaves} aqui"} fim'
+        assert (
+            _extract_json_object(text)
+            == '{"paths": ["a.md"], "note": "usa {chaves} aqui"}'
+        )
+
+    def test_escaped_quote_inside_string(self) -> None:
+        text = r'{"paths": [], "q": "ele disse \"oi\" e } foi"}'
+        assert _extract_json_object(text) == text
+
+    def test_first_of_multiple_objects(self) -> None:
+        text = '{"paths": ["a.md"]} {"paths": ["b.md"]}'
+        assert _extract_json_object(text) == '{"paths": ["a.md"]}'
+
+    def test_no_object_raises(self) -> None:
+        with pytest.raises(ValueError):
+            _extract_json_object("Here is the JSON requested")
+
+    def test_empty_raises(self) -> None:
+        with pytest.raises(ValueError):
+            _extract_json_object("")
+
+
+class TestParseRouterJson:
+    """The strict object contract must survive the salvage path."""
+
+    def test_salvages_object_with_brace_in_string(self) -> None:
+        parsed = _parse_router_json('ok: {"paths": ["a.md"], "x": "b { c"}')
+        assert parsed == {"paths": ["a.md"], "x": "b { c"}
+
+    def test_non_object_still_rejected(self) -> None:
+        for bogus in ("null", "[]", "42", '"just a string"', "[1, 2, 3]"):
+            with pytest.raises((ValueError, TypeError)):
+                _parse_router_json(bogus)
+
+    def test_no_json_still_rejected(self) -> None:
+        with pytest.raises((ValueError, TypeError)):
+            _parse_router_json("Here is the JSON requested")
 
 
 @pytest.mark.asyncio
