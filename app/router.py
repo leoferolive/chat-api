@@ -24,6 +24,49 @@ MAX_PATHS = 5
 HISTORY_TURNS = 4
 
 
+def _extract_json_object(text: str) -> str:
+    """Pull the first balanced ``{...}`` block out of ``text``.
+
+    Models routinely wrap the JSON in a prose preamble ("Here is the JSON
+    requested: {...}") or a markdown fence (```json\n{...}\n```) despite the
+    system prompt — Gemini's actual prod behaviour. Salvaging it here means
+    the first provider's answer is used instead of burning a failover
+    round-trip (Gemini free-tier is only 5 req/min).
+
+    The scanner is string-aware: ``{``/``}`` inside a JSON string literal
+    (and backslash-escaped quotes) do not move the brace depth, so a valid
+    object whose values contain braces isn't discarded.
+
+    Raises ``ValueError`` if no brace-balanced object is found, so genuinely
+    JSON-free responses still fall through to the next provider.
+    """
+    depth = 0
+    start = -1
+    in_str = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+    raise ValueError("no JSON object found in router response")
+
+
 def _parse_router_json(text: str) -> dict:
     """Strict validator for router responses.
 
@@ -31,11 +74,19 @@ def _parse_router_json(text: str) -> dict:
     which match our `{"paths": [...]}` contract. Treat anything that isn't
     a JSON object at the top level as a parse failure so the failover loop
     can try the next provider instead of silently refusing.
+
+    A clean ``{...}`` is parsed directly; anything else is salvaged via
+    `_extract_json_object` (prose preamble, markdown fence, trailing text)
+    before giving up and triggering failover.
     """
-    parsed = json.loads(text)
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        parsed = json.loads(_extract_json_object(text))
     if not isinstance(parsed, dict):
         raise ValueError(f"router returned non-object JSON: {type(parsed).__name__}")
     return parsed
+
 
 _SYSTEM_PT = """Você é um classificador. Seu único trabalho é ler o índice da wiki sobre o Leonardo Ferolla e decidir quais páginas são necessárias para responder à pergunta do usuário.
 
