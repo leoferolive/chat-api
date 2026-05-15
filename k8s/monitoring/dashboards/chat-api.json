@@ -2,23 +2,32 @@
   "annotations": {"list": []},
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
     {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "panels": [],
+      "title": "Tráfego & uso",
+      "type": "row"
+    },
+    {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Tokens de prompt e completion somados no intervalo selecionado, por modelo.",
       "fieldConfig": {
         "defaults": {"unit": "short", "color": {"mode": "palette-classic"}}
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 1},
       "id": 1,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
         {
           "expr": "sum by (kind, model) (increase(chat_api_tokens_total{namespace=~\"$namespace\"}[$__range]))",
-          "legendFormat": "{{kind}} / {{model}}",
+          "legendFormat": "{{kind}} · {{model}}",
           "refId": "A"
         }
       ],
@@ -27,66 +36,59 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Chamadas de LLM feitas hoje (UTC) contra o DAILY_LLM_CALL_LIMIT (500). Amarelo a partir de 400, vermelho em 500.",
       "fieldConfig": {
-        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 400}, {"color": "red", "value": 500}]}}
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 500,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 400}, {"color": "red", "value": 500}]}
+        }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 1},
       "id": 2,
-      "options": {"orientation": "horizontal", "showThresholdLabels": false, "showThresholdMarkers": true},
+      "options": {"orientation": "auto", "showThresholdLabels": true, "showThresholdMarkers": true, "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
-        {"expr": "max(chat_api_daily_calls{namespace=~\"$namespace\"})", "refId": "A"}
+        {"expr": "sum(chat_api_daily_calls{namespace=~\"$namespace\"})", "refId": "A"}
       ],
-      "title": "Chamadas LLM hoje (vs DAILY_LLM_CALL_LIMIT)",
+      "title": "Chamadas LLM hoje (de 500)",
       "type": "gauge"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "description": "Total de chats no intervalo, separados por desfecho. Substitui a antiga taxa/minuto, que ficava colada no zero neste volume.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "error"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "ok"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 1},
       "id": 3,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
-          "expr": "sum by (status) (rate(chat_api_chats_total{namespace=~\"$namespace\"}[5m])) * 60",
+          "expr": "sum by (status) (increase(chat_api_chats_total{namespace=~\"$namespace\"}[$__range]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
-      "title": "Chats por minuto (por status)",
-      "type": "timeseries"
+      "title": "Chats no intervalo (por status)",
+      "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-      "id": 4,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
-          "legendFormat": "p99",
-          "refId": "C"
-        }
-      ],
-      "title": "Latência (p50 / p95 / p99)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Distribuição dos chats OK no intervalo por modelo/provider.",
       "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 9},
       "id": 5,
-      "options": {"legend": {"displayMode": "list", "placement": "right"}, "pieType": "donut", "tooltip": {"mode": "single"}},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]}, "pieType": "donut", "tooltip": {"mode": "single"}, "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
           "expr": "sum by (model) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\"}[$__range]))",
@@ -99,74 +101,11 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Idioma detectado dos chats OK no intervalo.",
       "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "id": 6,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [
-        {
-          "expr": "sum by (model, phase) (increase(chat_api_provider_failures_total{namespace=~\"$namespace\"}[$__range]))",
-          "legendFormat": "{{model}} / {{phase}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Provider failures (por phase)",
-      "type": "barchart"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
-      "id": 7,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [
-        {
-          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container=\"chat-api\"}[5m]))",
-          "legendFormat": "{{pod}}",
-          "refId": "A"
-        }
-      ],
-      "title": "CPU (cores) — chat-api",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
-      "id": 8,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
-      "targets": [
-        {
-          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\",container=\"chat-api\"})",
-          "legendFormat": "{{pod}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Memória — chat-api",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
-      "id": 9,
-      "options": {"legend": {"displayMode": "list", "placement": "right"}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
-      "targets": [
-        {
-          "expr": "topk(10, sum by (user) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user=~\"$user\"}[$__range])))",
-          "legendFormat": "{{user}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Top usuários (ranking, intervalo)",
-      "type": "barchart"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 9},
       "id": 10,
-      "options": {"legend": {"displayMode": "list", "placement": "right"}, "pieType": "donut", "tooltip": {"mode": "single"}},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["value", "percent"]}, "pieType": "donut", "tooltip": {"mode": "single"}, "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
           "expr": "sum by (lang) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",lang!=\"\",user=~\"$user\"}[$__range]))",
@@ -178,8 +117,206 @@
       "type": "piechart"
     },
     {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Ranking dos 10 usuários com mais chats OK no intervalo (anônimos excluídos).",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 9},
+      "id": 9,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}, "tooltip": {"mode": "single"}, "orientation": "horizontal", "xTickLabelRotation": 0},
+      "targets": [
+        {
+          "expr": "topk(10, sum by (user) (increase(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user=~\"$user\"}[$__range])))",
+          "legendFormat": "{{user}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Top usuários (ranking, intervalo)",
+      "type": "barchart"
+    },
+    {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 40},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
+      "id": 101,
+      "panels": [],
+      "title": "Latência & confiabilidade",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Quantis e média da duração de /chat/stream no intervalo. Calculado sobre todo o intervalo (não janela de 5m) porque o volume é baixo e a taxa/5m fica vazia.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 10}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 18},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "textMode": "value_and_name", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (increase(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[$__range])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[$__range])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (increase(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[$__range])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(increase(chat_api_chat_duration_seconds_sum{namespace=~\"$namespace\"}[$__range])) / sum(increase(chat_api_chat_duration_seconds_count{namespace=~\"$namespace\"}[$__range]))",
+          "legendFormat": "média",
+          "refId": "D"
+        }
+      ],
+      "title": "Latência no intervalo (p50 / p95 / p99 / média)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Falhas de provider no intervalo, por modelo e fase (open = circuito aberto, early = falha antes do 1º token, mid = falha no meio do stream).",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 18},
+      "id": 6,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {
+          "expr": "sum by (model, phase) (increase(chat_api_provider_failures_total{namespace=~\"$namespace\"}[$__range]))",
+          "legendFormat": "{{model}} · {{phase}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Provider failures (por phase)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Tentativas de provider que terminaram em sucesso, sobre o total, no intervalo. Vazio = nenhuma tentativa registrada.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 0.99}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 18},
+      "id": 16,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "sum(increase(chat_api_provider_attempts_total{namespace=~\"$namespace\",result=\"success\"}[$__range])) / sum(increase(chat_api_provider_attempts_total{namespace=~\"$namespace\"}[$__range]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Taxa de sucesso de provider (intervalo)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "id": 102,
+      "panels": [],
+      "title": "Router & guardrails (RAG)",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Desfechos do roteador LLM que escolhe páginas de wiki: ok, empty (nenhuma página), parse_error, provider_error.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 10, "x": 0, "y": 27},
+      "id": 20,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(chat_api_router_outcome_total{namespace=~\"$namespace\"}[$__range]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Router outcomes (intervalo)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Média de páginas de wiki escolhidas pelo roteador por requisição, no intervalo.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 10, "y": 27},
+      "id": 21,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "sum(increase(chat_api_router_selected_pages_sum{namespace=~\"$namespace\"}[$__range])) / sum(increase(chat_api_router_selected_pages_count{namespace=~\"$namespace\"}[$__range]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Páginas wiki/req (média)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Vezes que o cost gate (DAILY_LLM_CALL_LIMIT) bloqueou uma requisição no intervalo.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 5, "x": 14, "y": 27},
+      "id": 22,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "sum(increase(chat_api_cost_gate_hits_total{namespace=~\"$namespace\"}[$__range]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Cost gate hits (intervalo)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Vezes que o rate limit por IP bloqueou uma requisição no intervalo.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 20}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 5, "x": 19, "y": 27},
+      "id": 23,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "expr": "sum(increase(chat_api_rate_limit_hits_total{namespace=~\"$namespace\"}[$__range]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Rate limit hits (intervalo)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 35},
       "id": 15,
       "panels": [],
       "title": "Pod overview",
@@ -187,36 +324,57 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Pods do chat-api (prod + dev, conforme o namespace selecionado) com condição Ready=true.",
       "fieldConfig": {
-        "defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+        }
       },
-      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 41},
+      "gridPos": {"h": 8, "w": 4, "x": 0, "y": 36},
       "id": 11,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
-          "expr": "sum(kube_pod_status_ready{namespace=~\"$namespace\",condition=\"true\"})",
-          "legendFormat": "ready",
+          "expr": "sum(kube_pod_status_ready{namespace=~\"$namespace\",pod=~\"chat-api.*\",condition=\"true\"})",
           "refId": "A"
-        },
-        {
-          "expr": "count(kube_pod_info{namespace=~\"$namespace\"})",
-          "legendFormat": "total",
-          "refId": "B"
         }
       ],
-      "title": "Pods ready / total",
+      "title": "Pods prontos",
       "type": "stat"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 18, "x": 6, "y": 41},
-      "id": 12,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
+      "description": "Total de pods do chat-api no namespace selecionado (independente de estarem prontos).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "fixed", "fixedColor": "text"}
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 4, "y": 36},
+      "id": 24,
+      "options": {"colorMode": "none", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
       "targets": [
         {
-          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\",container=\"chat-api\"}[15m]))",
+          "expr": "count(kube_pod_info{namespace=~\"$namespace\",pod=~\"chat-api.*\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Pods totais",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Restarts dos containers chat-api / chat-api-dev nos últimos 15 minutos, por pod.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 36},
+      "id": 12,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}, "tooltip": {"mode": "single"}, "orientation": "horizontal"},
+      "targets": [
+        {
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\",container=~\"chat-api.*\"}[15m]))",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -226,13 +384,56 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "percentunit", "color": {"mode": "palette-classic"}, "min": 0, "max": 1}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
-      "id": 13,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "description": "Uso de CPU (cores) dos containers chat-api / chat-api-dev, por pod.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 44},
+      "id": 7,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
         {
-          "expr": "container_memory_working_set_bytes{namespace=~\"$namespace\",container=\"chat-api\"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace=~\"$namespace\",container=\"chat-api\",resource=\"memory\"}",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container=~\"chat-api.*\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU (cores) — chat-api",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Working set de memória dos containers chat-api / chat-api-dev, por pod.",
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 44},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\",container=~\"chat-api.*\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Memória — chat-api",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Memória usada sobre o limite configurado, por pod. 1.0 = no limite (risco de OOMKill).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "palette-classic"},
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.8}, {"color": "red", "value": 0.95}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 52},
+      "id": 13,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{namespace=~\"$namespace\",container=~\"chat-api.*\"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace=~\"$namespace\",container=~\"chat-api.*\",resource=\"memory\"}",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -242,13 +443,14 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Tempo de CPU throttled por segundo (CFS), por pod. > 0 sustentado = CPU limit apertado.",
       "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 52},
       "id": 14,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"]}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
         {
-          "expr": "rate(container_cpu_cfs_throttled_seconds_total{namespace=~\"$namespace\",container=\"chat-api\"}[5m])",
+          "expr": "sum by (pod) (rate(container_cpu_cfs_throttled_seconds_total{namespace=~\"$namespace\",container=~\"chat-api.*\"}[$__rate_interval]))",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -263,14 +465,14 @@
   "templating": {
     "list": [
       {
-        "current": {"text": "All", "value": "$__all"},
+        "current": {"text": "chat-api", "value": "chat-api"},
         "datasource": {"type": "prometheus", "uid": "prometheus"},
         "includeAll": true,
         "label": "Namespace",
         "multi": true,
         "name": "namespace",
         "options": [],
-        "query": "label_values(chat_api_chats_total, namespace)",
+        "query": "label_values(chat_api_info, namespace)",
         "refresh": 2,
         "regex": "",
         "type": "query"
@@ -291,11 +493,11 @@
       }
     ]
   },
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {"from": "now-24h", "to": "now"},
   "timepicker": {},
   "timezone": "America/Sao_Paulo",
   "title": "chat-api",
   "uid": "chat-api",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
