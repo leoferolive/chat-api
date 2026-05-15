@@ -24,6 +24,6 @@ data:
   ROUTER_MAX_TOKENS: "1500"
   # Dev exercises OpenRouter as the primary provider so we can validate
   # the integration independently of Gemini.
-  LLM_PROVIDERS: "openrouter/deepseek/deepseek-v4-flash,openrouter/google/gemini-2.5-flash-lite,gemini/gemini-2.5-flash"
+  LLM_PROVIDERS: "openrouter/google/gemini-2.5-flash-lite,openrouter/deepseek/deepseek-v4-flash,gemini/gemini-2.5-flash"
   ZAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4/"
   WIKI_POLL_SECONDS: "60"

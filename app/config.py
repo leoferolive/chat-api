@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # inflating cost (router runs once per turn, temperature=0).
     router_max_tokens: int = 1500
 
-    llm_providers: str = "gemini/gemini-2.5-flash,openrouter/anthropic/claude-haiku-4.5"
+    llm_providers: str = "openrouter/google/gemini-2.5-flash-lite,openrouter/deepseek/deepseek-v4-flash,gemini/gemini-2.5-flash"
 
     wiki_poll_seconds: int = 60
 
