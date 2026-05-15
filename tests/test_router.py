@@ -177,6 +177,40 @@ async def test_falls_back_when_primary_returns_non_json(
 
 
 @pytest.mark.asyncio
+async def test_salvages_json_from_preamble_without_failover(
+    settings: Settings, loader: WikiLoader, mock_llm
+) -> None:
+    """When the model emits a prose preamble or markdown fence *followed by*
+    valid JSON (Gemini's actual behaviour: 'Here is the JSON requested:
+    {...}'), we must extract and use it on the FIRST provider — not waste a
+    failover round-trip (Gemini free-tier is 5 req/min)."""
+    salvageable = (
+        'Here is the JSON requested: {"paths": ["entities/wiley.md"]}',
+        '```json\n{"paths": ["entities/wiley.md"]}\n```',
+        '```\n{"paths": ["entities/wiley.md"]}\n```',
+        'Sure!\n{"paths": ["entities/wiley.md"]}\nLet me know if you need more.',
+    )
+    for resp in salvageable:
+        mock_llm.reset()
+        mock_llm.router_response_by_model["mock/primary"] = resp
+        mock_llm.router_response_by_model["mock/secondary"] = (
+            '{"paths": ["skills/ai.md"]}'
+        )
+        paths = await pick_paths(
+            question="me fala sobre wiley",
+            history=[ChatMessage(role="user", content="me fala sobre wiley")],
+            lang="pt",
+            loader=loader,
+            providers=settings.provider_list,
+            settings=settings,
+        )
+        assert paths == ["entities/wiley.md"], f"failed to salvage {resp!r}"
+        assert mock_llm.router_calls == ["mock/primary"], (
+            f"failover fired instead of salvaging {resp!r}"
+        )
+
+
+@pytest.mark.asyncio
 async def test_falls_back_when_primary_returns_non_object_json(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:
