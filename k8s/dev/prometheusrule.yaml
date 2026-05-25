@@ -33,6 +33,40 @@ spec:
             summary: "chat-api-dev: cost gate atingido"
             description: "DAILY_LLM_CALL_LIMIT bloqueou requests ({{ $value | humanize }} bloqueios em 5min)."
 
+        - alert: ChatApiCostBudgetExceeded
+          # Dev recebe pouco tráfego — orçamento simbólico de $1/dia
+          # confirma o pipeline de alerta ponta-a-ponta.
+          expr: sum(chat_api:cost_usd:increase24h{namespace="chat-api-dev"}) > 1
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: gasto 24h > $1"
+            description: "Gasto últimas 24h: ${{ $value | humanize }}."
+
+    - name: chat-api-dev.quality
+      interval: 60s
+      rules:
+        - alert: ChatApiQualityRegression
+          expr: |
+            (
+              sum by (criterion) (
+                chat_api_judge_score_avg * chat_api_judge_evaluations_total
+              )
+              /
+              clamp_min(sum by (criterion) (chat_api_judge_evaluations_total), 1)
+            ) < 3.5
+              and
+            sum by (criterion) (chat_api_judge_evaluations_total) >= 3
+          for: 30m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: qualidade caiu em '{{ $labels.criterion }}'"
+            description: "Score médio {{ $labels.criterion }}={{ $value | humanize }} (SLO 3.5)."
+
     - name: chat-api-dev.health
       interval: 30s
       rules:
@@ -63,3 +97,16 @@ spec:
           annotations:
             summary: "chat-api-dev: pod restartando"
             description: "{{ $value | humanize }} restarts em 15min."
+
+        - alert: ChatApiHighFallbackRate
+          expr: |
+            sum(rate(chat_api_provider_failures_total{namespace="chat-api-dev",phase!="open"}[10m]))
+              /
+            clamp_min(sum(rate(chat_api_chats_total{namespace="chat-api-dev"}[10m])), 1e-9) > 0.3
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api-dev
+          annotations:
+            summary: "chat-api-dev: fallback rate > 30%"
+            description: "{{ $value | humanizePercentage }} das chamadas em fallback."
