@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chat-api-recording
+  namespace: monitoring
+  labels:
+    app: chat-api
+    release: kps
+spec:
+  # Pre-aggregated metrics used by the FinOps dashboard. Computing rate() over
+  # 24h on the dashboard is heavy; recording rules push the work to the
+  # Prometheus side and let panels query a cheap counter.
+  groups:
+    - name: chat-api.cost
+      interval: 60s
+      rules:
+        - record: chat_api:cost_usd:rate1h
+          expr: sum by (namespace, model, provider, stage) (rate(chat_api_cost_usd_total[1h]))
+        - record: chat_api:cost_usd:rate24h
+          expr: sum by (namespace, model, provider, stage) (rate(chat_api_cost_usd_total[24h]))
+        - record: chat_api:cost_usd:increase24h
+          expr: sum by (namespace) (increase(chat_api_cost_usd_total[24h]))
+        - record: chat_api:cost_usd:increase7d
+          expr: sum by (namespace) (increase(chat_api_cost_usd_total[7d]))
