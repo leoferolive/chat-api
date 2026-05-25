@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS messages (
     prompt_tokens INTEGER,
     completion_tokens INTEGER,
     latency_ms INTEGER,
+    cost_usd REAL DEFAULT 0,
     created_at INTEGER
 );
 
@@ -71,6 +72,7 @@ class Database:
         self._conn = await aiosqlite.connect(self.db_path)
         await self._conn.executescript(_SCHEMA)
         await self._migrate_add_user_name()
+        await self._migrate_add_cost_usd()
         await self._conn.commit()
 
     async def _migrate_add_user_name(self) -> None:
@@ -82,6 +84,15 @@ class Database:
             cols = {row[1] async for row in cur}
         if "user_name" not in cols:
             await self._conn.execute("ALTER TABLE sessions ADD COLUMN user_name TEXT")
+
+    async def _migrate_add_cost_usd(self) -> None:
+        assert self._conn is not None
+        async with self._conn.execute("PRAGMA table_info(messages)") as cur:
+            cols = {row[1] async for row in cur}
+        if "cost_usd" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN cost_usd REAL DEFAULT 0"
+            )
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -120,14 +131,15 @@ class Database:
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         latency_ms: int = 0,
+        cost_usd: float = 0.0,
     ) -> None:
         assert self._conn is not None
         await self._conn.execute(
             """
             INSERT INTO messages
                 (session_id, role, content, model,
-                 prompt_tokens, completion_tokens, latency_ms, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 prompt_tokens, completion_tokens, latency_ms, cost_usd, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -137,6 +149,7 @@ class Database:
                 prompt_tokens,
                 completion_tokens,
                 latency_ms,
+                cost_usd,
                 _now_ts(),
             ),
         )

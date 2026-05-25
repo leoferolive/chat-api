@@ -316,6 +316,7 @@ async def _handle_chat_stream(
         full_text = ""
         prompt_tokens = 0
         completion_tokens = 0
+        cost_usd = 0.0
         provider_attempts: list[str] = []
         try:
             async for ev in stream_completion(messages_for_llm, settings.provider_list):
@@ -329,6 +330,7 @@ async def _handle_chat_stream(
                     full_text = ev.get("text", "")
                     prompt_tokens = ev["tokens"].get("prompt", 0)
                     completion_tokens = ev["tokens"].get("completion", 0)
+                    cost_usd = ev.get("cost_usd", 0.0)
                     provider_attempts = ev.get("attempts", [])
                     yield {
                         "data": sse_payload(
@@ -385,6 +387,7 @@ async def _handle_chat_stream(
             model_used=model_used,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            cost_usd=cost_usd,
             latency_ms=latency_ms,
             provider_attempts=provider_attempts,
             wiki_pages=[p.path for p in pages],
@@ -400,6 +403,7 @@ async def _handle_chat_stream(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     latency_ms=latency_ms,
+                    cost_usd=cost_usd,
                 )
             )
 

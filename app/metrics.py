@@ -28,6 +28,12 @@ TOKENS_TOTAL = Counter(
     labelnames=("kind", "model"),
 )
 
+COST_USD_TOTAL = Counter(
+    "chat_api_cost_usd_total",
+    "Estimated USD cost of LLM calls, by model, provider and stage (router|answer).",
+    labelnames=("model", "provider", "stage"),
+)
+
 PROVIDER_FAILURES_TOTAL = Counter(
     "chat_api_provider_failures_total",
     "LLM provider failures, by model and phase (open|early|mid).",

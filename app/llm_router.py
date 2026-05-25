@@ -16,7 +16,9 @@ import litellm
 import structlog
 
 from .config import get_settings
+from .cost import compute_cost, provider_of
 from .metrics import (
+    COST_USD_TOTAL,
     PROVIDER_ATTEMPTS_TOTAL,
     PROVIDER_FAILURES_TOTAL,
     TOKENS_TOTAL,
@@ -153,6 +155,11 @@ async def stream_completion(
             TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
         if completion_tokens:
             TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
+        cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+        if cost_usd:
+            COST_USD_TOTAL.labels(
+                model=model, provider=provider_of(model), stage="answer"
+            ).inc(cost_usd)
         yield {
             "type": "done",
             "model": model,
@@ -160,6 +167,7 @@ async def stream_completion(
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
             },
+            "cost_usd": cost_usd,
             "attempts": attempts,
             "text": full_text,
         }
@@ -243,6 +251,11 @@ async def complete_once(
                     TOKENS_TOTAL.labels(kind="completion", model=model).inc(
                         completion_tokens
                     )
+                cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+                if cost_usd:
+                    COST_USD_TOTAL.labels(
+                        model=model, provider=provider_of(model), stage="router"
+                    ).inc(cost_usd)
                 last_err = exc
                 last_phase = "validate"
                 continue
@@ -252,6 +265,11 @@ async def complete_once(
             TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
         if completion_tokens:
             TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
+        cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+        if cost_usd:
+            COST_USD_TOTAL.labels(
+                model=model, provider=provider_of(model), stage="router"
+            ).inc(cost_usd)
         result: dict = {
             "text": text,
             "model": model,
@@ -259,6 +277,7 @@ async def complete_once(
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
             },
+            "cost_usd": cost_usd,
             "attempts": attempts,
         }
         if validator is not None:
