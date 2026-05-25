@@ -37,6 +37,19 @@ CREATE TABLE IF NOT EXISTS daily_calls (
     day TEXT PRIMARY KEY,
     count INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS judge_scores (
+    message_id INTEGER NOT NULL REFERENCES messages(id),
+    criterion TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason TEXT,
+    judge_model TEXT,
+    created_at INTEGER,
+    PRIMARY KEY (message_id, criterion)
+);
+
+CREATE INDEX IF NOT EXISTS idx_judge_scores_created_at
+    ON judge_scores(created_at);
 """
 
 
@@ -192,6 +205,148 @@ class Database:
         ) as cur:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
+
+    # --- judge ----------------------------------------------------------
+
+    async def fetch_unscored_assistant_turns(
+        self, criteria: list[str], limit: int = 50
+    ) -> list[dict]:
+        """Return assistant turns that lack at least one of the given scores.
+
+        For each row we also pull the immediately preceding user turn in the
+        same session (the question being answered) and the model that
+        produced the answer — both are needed by the judge prompt.
+        """
+        assert self._conn is not None
+        if not criteria:
+            return []
+        placeholders = ",".join("?" for _ in criteria)
+        async with self._conn.execute(
+            f"""
+            SELECT
+                a.id AS assistant_id,
+                a.session_id,
+                a.content AS answer,
+                a.model,
+                a.created_at,
+                (
+                    SELECT u.content
+                    FROM messages u
+                    WHERE u.session_id = a.session_id
+                      AND u.role = 'user'
+                      AND u.created_at <= a.created_at
+                    ORDER BY u.created_at DESC, u.id DESC
+                    LIMIT 1
+                ) AS question
+            FROM messages a
+            WHERE a.role = 'assistant'
+              AND a.content IS NOT NULL
+              AND length(a.content) > 0
+              AND (
+                  SELECT COUNT(DISTINCT js.criterion)
+                  FROM judge_scores js
+                  WHERE js.message_id = a.id
+                    AND js.criterion IN ({placeholders})
+              ) < ?
+            ORDER BY a.id DESC
+            LIMIT ?
+            """,
+            (*criteria, len(criteria), limit),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "assistant_id": row[0],
+                "session_id": row[1],
+                "answer": row[2],
+                "model": row[3],
+                "created_at": row[4],
+                "question": row[5],
+            }
+            for row in rows
+        ]
+
+    async def save_judge_score(
+        self,
+        *,
+        message_id: int,
+        criterion: str,
+        score: float,
+        reason: str,
+        judge_model: str,
+    ) -> None:
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            INSERT INTO judge_scores
+                (message_id, criterion, score, reason, judge_model, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(message_id, criterion) DO UPDATE SET
+                score = excluded.score,
+                reason = excluded.reason,
+                judge_model = excluded.judge_model,
+                created_at = excluded.created_at
+            """,
+            (message_id, criterion, score, reason, judge_model, _now_ts()),
+        )
+        await self._conn.commit()
+
+    async def judge_score_aggregates(self, since_ts: int) -> list[dict]:
+        """Aggregate judge scores recorded after ``since_ts`` for /metrics-judge."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            SELECT
+                js.criterion,
+                COALESCE(js.judge_model, 'unknown') AS judge_model,
+                COALESCE(m.model, 'unknown')       AS answer_model,
+                AVG(js.score)                      AS avg_score,
+                COUNT(*)                           AS n
+            FROM judge_scores js
+            LEFT JOIN messages m ON m.id = js.message_id
+            WHERE js.created_at >= ?
+            GROUP BY js.criterion, judge_model, answer_model
+            """,
+            (since_ts,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "criterion": row[0],
+                "judge_model": row[1],
+                "answer_model": row[2],
+                "avg_score": float(row[3] or 0.0),
+                "count": int(row[4]),
+            }
+            for row in rows
+        ]
+
+    async def judge_verdict_counts(self, since_ts: int) -> list[dict]:
+        """Bucketed counts (pass|warn|fail) for /metrics-judge."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            SELECT
+                js.criterion,
+                CASE
+                    WHEN js.score >= 4 THEN 'pass'
+                    WHEN js.score >= 3 THEN 'warn'
+                    ELSE 'fail'
+                END AS verdict,
+                COUNT(*) AS n
+            FROM judge_scores js
+            WHERE js.created_at >= ?
+            GROUP BY js.criterion, verdict
+            """,
+            (since_ts,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {"criterion": row[0], "verdict": row[1], "count": int(row[2])}
+            for row in rows
+        ]
+
+    # --- legacy / per-IP -----------------------------------------------
 
     async def count_calls_today_by_ip(self, ip_hash: str) -> int:
         """Count assistant turns served to this IP today (UTC)."""

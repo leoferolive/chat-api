@@ -13,7 +13,12 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Gauge,
+    generate_latest,
+)
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -151,6 +156,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not _is_internal_host(request.headers.get("host", "")):
             return Response(status_code=404)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.get("/metrics-judge")
+    async def metrics_judge(request: Request) -> Response:
+        # Same internal-only guard as /metrics. The judge runs in a separate
+        # CronJob process, so its counters live in the shared SQLite — we
+        # build a fresh CollectorRegistry per scrape from current aggregates.
+        if not _is_internal_host(request.headers.get("host", "")):
+            return Response(status_code=404)
+        db: Database = request.app.state.db
+        # 24h window — long enough to survive a Prometheus restart, short
+        # enough that "average score yesterday" stays informative.
+        since_ts = int(time.time()) - 24 * 3600
+        aggregates = await db.judge_score_aggregates(since_ts)
+        verdicts = await db.judge_verdict_counts(since_ts)
+
+        reg = CollectorRegistry()
+        score_avg = Gauge(
+            "chat_api_judge_score_avg",
+            "Average judge score (24h window) per criterion / answer model / judge model.",
+            labelnames=("criterion", "answer_model", "judge_model"),
+            registry=reg,
+        )
+        score_count = Gauge(
+            "chat_api_judge_evaluations_total",
+            "Number of judge evaluations recorded in the 24h window.",
+            labelnames=("criterion", "answer_model", "judge_model"),
+            registry=reg,
+        )
+        verdict_count = Gauge(
+            "chat_api_judge_verdicts_total",
+            "Judge verdict bucket counts (pass>=4, warn=3, fail<3) in the 24h window.",
+            labelnames=("criterion", "verdict"),
+            registry=reg,
+        )
+        for row in aggregates:
+            score_avg.labels(
+                criterion=row["criterion"],
+                answer_model=row["answer_model"],
+                judge_model=row["judge_model"],
+            ).set(row["avg_score"])
+            score_count.labels(
+                criterion=row["criterion"],
+                answer_model=row["answer_model"],
+                judge_model=row["judge_model"],
+            ).set(row["count"])
+        for row in verdicts:
+            verdict_count.labels(
+                criterion=row["criterion"], verdict=row["verdict"]
+            ).set(row["count"])
+        return Response(
+            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
+        )
 
     @app.post("/chat/stream")
     @limiter.limit(settings.rate_limit_per_ip)
