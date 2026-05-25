@@ -8,11 +8,13 @@ short-circuit to a fixed refusal without invoking the answer LLM.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import structlog
 
 from .config import Settings
+from .cost import provider_of
 from .llm_router import AllProvidersFailed, complete_once
 from .metrics import ROUTER_OUTCOME_TOTAL, ROUTER_SELECTED_PAGES
 from .models import ChatMessage
@@ -22,6 +24,19 @@ logger = structlog.get_logger(__name__)
 
 MAX_PATHS = 5
 HISTORY_TURNS = 4
+
+
+def decision_hash(paths: list[str]) -> str:
+    """Stable 8-char fingerprint for a set of router-selected wiki paths.
+
+    Used as a low-cardinality label / log field so a turn's "decision" can be
+    correlated to cost and quality metrics. Order-insensitive so the same set
+    of paths in a different order yields the same hash.
+    """
+    if not paths:
+        return "empty"
+    joined = ",".join(sorted(paths))
+    return hashlib.sha1(joined.encode()).hexdigest()[:8]
 
 
 def _extract_json_object(text: str) -> str:
@@ -224,11 +239,18 @@ async def pick_paths(
     else:
         outcome = "empty"
     ROUTER_OUTCOME_TOTAL.labels(outcome=outcome).inc()
+    model_used = result.get("model", "")
     logger.info(
         "router_picked",
-        model=result.get("model"),
+        stage="router",
+        model=model_used,
+        provider=provider_of(model_used),
         paths=paths,
+        decision_paths=decision_hash(paths),
         outcome=outcome,
+        prompt_tokens=result.get("tokens", {}).get("prompt", 0),
+        completion_tokens=result.get("tokens", {}).get("completion", 0),
+        cost_usd=result.get("cost_usd", 0.0),
         attempts=result.get("attempts", []),
     )
     return paths

@@ -6,6 +6,7 @@ import asyncio
 import ipaddress
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -40,7 +41,8 @@ from .metrics import (
 )
 from .models import ChatRequest
 from .prompt import build_messages, refusal_text
-from .router import pick_paths
+from .cost import provider_of
+from .router import decision_hash, pick_paths
 from .sse import build_response, sse_payload
 from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name
 from .wiki_loader import WikiLoader
@@ -122,6 +124,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        # Honour an upstream X-Request-Id (set by Traefik / a tracing proxy)
+        # so a request crossing services can be correlated by a single id.
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=rid)
+        try:
+            response = await call_next(request)
+        finally:
+            structlog.contextvars.clear_contextvars()
+        response.headers["X-Request-Id"] = rid
+        return response
 
     @app.get("/healthz")
     async def healthz() -> dict:
@@ -310,6 +326,7 @@ async def _handle_chat_stream(
 
     pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
     messages_for_llm = build_messages(body.lang, pages, body.messages)
+    paths_hash = decision_hash(selected_paths)
 
     async def event_gen() -> AsyncIterator[dict]:
         model_used = ""
@@ -381,14 +398,17 @@ async def _handle_chat_stream(
         ).observe(elapsed)
         log.info(
             "chat_completed",
+            stage="answer",
             session_id=body.sessionId,
             lang=body.lang,
             user=user_label,
             model_used=model_used,
+            provider=provider_of(model_used),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             cost_usd=cost_usd,
             latency_ms=latency_ms,
+            decision_paths=paths_hash,
             provider_attempts=provider_attempts,
             wiki_pages=[p.path for p in pages],
         )

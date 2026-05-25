@@ -8,17 +8,24 @@ import pytest
 
 
 def metric_value(body: str, name: str, labels: dict[str, str] | None = None) -> float:
-    """Return the value of a single Prometheus sample. 0.0 if absent."""
+    """Sum Prometheus samples for ``name`` matching ``labels``. 0.0 if absent.
+
+    Subsetting semantics: a sample matches when its labels contain all
+    requested key=value pairs; extra labels are ignored. Multiple matching
+    lines are summed — useful when a metric was split across new labels
+    (e.g. adding ``stage`` to ``chat_api_tokens_total``).
+    """
     if labels:
         pattern = rf"^{re.escape(name)}\{{([^}}]*)\}}\s+([\d.eE+-]+)"
+        total = 0.0
         for line in body.splitlines():
             m = re.match(pattern, line)
             if not m:
                 continue
             line_labels = dict(re.findall(r'(\w+)="([^"]*)"', m.group(1)))
             if all(line_labels.get(k) == v for k, v in labels.items()):
-                return float(m.group(2))
-        return 0.0
+                total += float(m.group(2))
+        return total
     pattern = rf"^{re.escape(name)}\s+([\d.eE+-]+)"
     for line in body.splitlines():
         m = re.match(pattern, line)

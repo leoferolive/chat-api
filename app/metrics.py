@@ -24,14 +24,21 @@ CHAT_DURATION_SECONDS = Histogram(
 
 TOKENS_TOTAL = Counter(
     "chat_api_tokens_total",
-    "LLM tokens consumed, by kind (prompt|completion) and model.",
-    labelnames=("kind", "model"),
+    "LLM tokens consumed, by kind (prompt|completion), model and stage.",
+    labelnames=("kind", "model", "stage"),
 )
 
 COST_USD_TOTAL = Counter(
     "chat_api_cost_usd_total",
     "Estimated USD cost of LLM calls, by model, provider and stage (router|answer).",
     labelnames=("model", "provider", "stage"),
+)
+
+STAGE_DURATION_SECONDS = Histogram(
+    "chat_api_stage_duration_seconds",
+    "Wall-clock duration of a single LLM stage (router|answer), by stage and model.",
+    labelnames=("stage", "model"),
+    buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60),
 )
 
 PROVIDER_FAILURES_TOTAL = Counter(
