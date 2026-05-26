@@ -1,113 +1,625 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
   "links": [
-    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "FinOps", "tooltip": "", "type": "link", "url": "/d/chat-api-finops"},
-    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "Quality", "tooltip": "", "type": "link", "url": "/d/chat-api-quality"}
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "chat-api"
+      ],
+      "targetBlank": false,
+      "title": "FinOps",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/chat-api-finops"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "chat-api"
+      ],
+      "targetBlank": false,
+      "title": "Quality",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/chat-api-quality"
+    }
   ],
   "liveNow": false,
   "panels": [
-    {"type": "row", "id": 100, "title": "Throughput", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "cpm", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 1},
-      "id": 1,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "type": "row",
+      "id": 50,
+      "title": "Tráfego (24h / 7d / 30d)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 51,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
       "targets": [
-        {"expr": "sum by (status) (rate(chat_api_chats_total{namespace=~\"$namespace\"}[5m])) * 60", "legendFormat": "{{status}}", "refId": "A"}
+        {
+          "expr": "sum(chat_api_unique_sessions{namespace=~\"$namespace\",window=\"today\"})",
+          "legendFormat": "hoje",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(chat_api_unique_sessions{namespace=~\"$namespace\",window=\"7d\"})",
+          "legendFormat": "7d",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(chat_api_unique_sessions{namespace=~\"$namespace\",window=\"30d\"})",
+          "legendFormat": "30d",
+          "refId": "C"
+        }
+      ],
+      "title": "Sessões únicas",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 52,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(chat_api_unique_ips{namespace=~\"$namespace\",window=\"today\"})",
+          "legendFormat": "hoje",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(chat_api_unique_ips{namespace=~\"$namespace\",window=\"7d\"})",
+          "legendFormat": "7d",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(chat_api_unique_ips{namespace=~\"$namespace\",window=\"30d\"})",
+          "legendFormat": "30d",
+          "refId": "C"
+        }
+      ],
+      "title": "IPs únicos",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 53,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (lang) (rate(chat_api_sessions_created_total{namespace=~\"$namespace\"}[1h])) * 3600",
+          "legendFormat": "{{lang}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Novas sessões/h por lang",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 54,
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "sum by (lang) (chat_api_sessions_by_lang{namespace=~\"$namespace\"})",
+          "legendFormat": "{{lang}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Sessões hoje por lang",
+      "type": "bargauge"
+    },
+    {
+      "type": "row",
+      "id": 100,
+      "title": "Throughput",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cpm",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(chat_api_chats_total{namespace=~\"$namespace\"}[5m])) * 60",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
       ],
       "title": "Chats/min por status",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 1},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
       "id": 2,
-      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "max"]}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (stage, model) (rate(chat_api_tokens_total{namespace=~\"$namespace\",kind=\"completion\"}[5m]))", "legendFormat": "{{stage}} / {{model}}", "refId": "A"}
+        {
+          "expr": "sum by (stage, model) (rate(chat_api_tokens_total{namespace=~\"$namespace\",kind=\"completion\"}[5m]))",
+          "legendFormat": "{{stage}} / {{model}}",
+          "refId": "A"
+        }
       ],
       "title": "Tokens/s (completion) por stage e model",
       "type": "timeseries"
     },
-    {"type": "row", "id": 200, "title": "Latência", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "type": "row",
+      "id": 200,
+      "title": "Latência",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "id": 3,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "histogram_quantile(0.50, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "p50", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "p95", "refId": "B"},
-        {"expr": "histogram_quantile(0.99, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "p99", "refId": "C"}
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(chat_api_chat_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
       ],
       "title": "Latência end-to-end (p50 / p95 / p99)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "id": 4,
-      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "max"]}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "histogram_quantile(0.50, sum by (le, stage) (rate(chat_api_stage_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "p50 {{stage}}", "refId": "A"},
-        {"expr": "histogram_quantile(0.99, sum by (le, stage) (rate(chat_api_stage_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))", "legendFormat": "p99 {{stage}}", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, stage) (rate(chat_api_stage_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "legendFormat": "p50 {{stage}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, stage) (rate(chat_api_stage_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])))",
+          "legendFormat": "p99 {{stage}}",
+          "refId": "B"
+        }
       ],
       "title": "Latência por stage (router vs answer)",
       "type": "timeseries"
     },
-    {"type": "row", "id": 300, "title": "Erros e fallback", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 19},
+      "type": "row",
+      "id": 300,
+      "title": "Erros e fallback",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
       "id": 5,
-      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "max"]}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (model, phase) (rate(chat_api_provider_failures_total{namespace=~\"$namespace\"}[5m]))", "legendFormat": "{{model}} / {{phase}}", "refId": "A"}
+        {
+          "expr": "sum by (model, phase) (rate(chat_api_provider_failures_total{namespace=~\"$namespace\"}[5m]))",
+          "legendFormat": "{{model}} / {{phase}}",
+          "refId": "A"
+        }
       ],
       "title": "Provider failures/s por phase",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.3}]}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 19},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.3
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
       "id": 6,
-      "options": {"orientation": "horizontal", "showThresholdMarkers": true},
+      "options": {
+        "orientation": "horizontal",
+        "showThresholdMarkers": true
+      },
       "targets": [
-        {"expr": "sum(rate(chat_api_provider_failures_total{namespace=~\"$namespace\",phase!=\"open\"}[10m])) / clamp_min(sum(rate(chat_api_chats_total{namespace=~\"$namespace\"}[10m])), 1e-9)", "refId": "A"}
+        {
+          "expr": "sum(rate(chat_api_provider_failures_total{namespace=~\"$namespace\",phase!=\"open\"}[10m])) / clamp_min(sum(rate(chat_api_chats_total{namespace=~\"$namespace\"}[10m])), 1e-9)",
+          "refId": "A"
+        }
       ],
       "title": "Fallback rate (10m)",
       "type": "gauge"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
       "id": 7,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (outcome) (rate(chat_api_router_outcome_total{namespace=~\"$namespace\"}[5m])) * 60", "legendFormat": "{{outcome}}", "refId": "A"}
+        {
+          "expr": "sum by (outcome) (rate(chat_api_router_outcome_total{namespace=~\"$namespace\"}[5m])) * 60",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
       ],
       "title": "Router outcomes/min (ok / empty / parse_error / provider_error / invalid_paths)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
       "id": 8,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container=~\"chat-api.*\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A"}
+        {
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container=~\"chat-api.*\"}[5m]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
       ],
       "title": "CPU (cores) — chat-api",
       "type": "timeseries"
@@ -115,12 +627,21 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["chat-api", "operations"],
+  "tags": [
+    "chat-api",
+    "operations"
+  ],
   "templating": {
     "list": [
       {
-        "current": {"text": "All", "value": "$__all"},
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "includeAll": true,
         "label": "Namespace",
         "multi": true,
@@ -133,7 +654,10 @@
       }
     ]
   },
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "America/Sao_Paulo",
   "title": "chat-api / Operations",

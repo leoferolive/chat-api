@@ -20,7 +20,12 @@ spec:
       scrapeTimeout: 10s
     - port: http
       path: /metrics-judge
-      # Judge scores update at most every 10 min in dev — no value scraping
-      # faster than once per minute.
+      # Judge runs every 4h — no value scraping faster than once per minute.
+      interval: 60s
+      scrapeTimeout: 10s
+    - port: http
+      path: /metrics-traffic
+      # Traffic gauges aggregate over 24h/7d/30d windows. Once per minute
+      # is more than enough granularity.
       interval: 60s
       scrapeTimeout: 10s
