@@ -144,12 +144,16 @@ spec:
             description: "p95: {{ $value | humanizeDuration }} nos últimos 5min."
 
         - alert: ChatApiPodNotReady
-          # O namespace chat-api contém apenas pods do chat-api, então filtrar
-          # por namespace é suficiente — sem necessidade de join com
-          # kube_pod_labels (que esta instalação do KSM não expõe por default,
-          # já que --metric-labels-allowlist não está habilitado para pods).
+          # A premissa antiga ("namespace só tem pods do chat-api") quebrou
+          # quando passamos a ter CronJobs (chat-api-judge, chat-api-rotate-session)
+          # cujos pods naturalmente ficam Ready=False após terminar. O join com
+          # kube_pod_status_phase{phase="Running"} restringe o alerta aos pods
+          # que DEVERIAM estar Ready — Job pods em Succeeded/Failed somem do
+          # critério em vez de paginar.
           expr: |
             kube_pod_status_ready{namespace="chat-api",condition="true"} == 0
+              and on(namespace, pod)
+            kube_pod_status_phase{namespace="chat-api",phase="Running"} == 1
           for: 5m
           labels:
             severity: critical
