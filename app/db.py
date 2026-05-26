@@ -83,6 +83,12 @@ class Database:
     async def connect(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self.db_path)
+        # WAL lets the judge CronJob read/write the same DB file concurrently
+        # with the chat-api Pod (both mount the chat-api-db PVC). Without WAL,
+        # default journal mode blocks readers during a write transaction and
+        # /chat/stream stalls while the CronJob is committing scores.
+        await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._conn.executescript(_SCHEMA)
         await self._migrate_add_user_name()
         await self._migrate_add_cost_usd()
@@ -268,7 +274,7 @@ class Database:
             (*criteria, len(criteria), limit),
         ) as cur:
             rows = await cur.fetchall()
-        return [
+        turns = [
             {
                 "assistant_id": row[0],
                 "session_id": row[1],
@@ -279,6 +285,18 @@ class Database:
             }
             for row in rows
         ]
+        # Decorate each turn with the criteria that still need scoring, so a
+        # retry after a partial failure doesn't re-bill the criteria already
+        # in judge_scores.
+        criteria_set = set(criteria)
+        for turn in turns:
+            async with self._conn.execute(
+                "SELECT criterion FROM judge_scores WHERE message_id = ?",
+                (turn["assistant_id"],),
+            ) as cur:
+                done = {row[0] async for row in cur}
+            turn["missing_criteria"] = [c for c in criteria if c in criteria_set - done]
+        return turns
 
     async def save_judge_score(
         self,

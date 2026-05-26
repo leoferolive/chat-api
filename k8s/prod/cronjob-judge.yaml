@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: chat-api-judge
-  namespace: chat-api-prod
+  namespace: chat-api
 spec:
   # 6x/day — traffic is low enough that hourly was overkill. A regression
   # surfaces within 4h, which still beats the time it takes to manually
@@ -14,6 +14,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      activeDeadlineSeconds: 1800
       template:
         spec:
           restartPolicy: OnFailure

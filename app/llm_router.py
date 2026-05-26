@@ -97,11 +97,13 @@ async def stream_completion(
 
     attempts: list[str] = []
     last_err: Exception | None = None
-    started = time.monotonic()
 
     for model in providers:
         attempts.append(model)
         litellm_model, extra = _provider_kwargs(model)
+        # Reset per-provider so failover time of earlier providers doesn't
+        # pollute the latency observed for the one that actually streamed.
+        started = time.monotonic()
         try:
             stream = await litellm.acompletion(
                 model=litellm_model,
@@ -215,11 +217,12 @@ async def complete_once(
     attempts: list[str] = []
     last_err: Exception | None = None
     last_phase: str = "open"
-    started = time.monotonic()
 
     for model in providers:
         attempts.append(model)
         litellm_model, extra = _provider_kwargs(model)
+        # Same per-provider reset as stream_completion.
+        started = time.monotonic()
         kwargs: dict = {
             "model": litellm_model,
             "messages": messages,

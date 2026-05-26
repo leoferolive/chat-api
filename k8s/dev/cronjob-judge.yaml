@@ -14,6 +14,9 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      # Cap a run at 30 min so a stuck LiteLLM call doesn't hold the
+      # Job alive past the next 4h tick (which `Forbid` would then skip).
+      activeDeadlineSeconds: 1800
       template:
         spec:
           restartPolicy: OnFailure

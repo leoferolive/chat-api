@@ -119,6 +119,23 @@ async def test_evaluate_batch_partial_failure_counts(seeded_db, fake_llm) -> Non
 
 
 @pytest.mark.asyncio
+async def test_evaluate_batch_only_retries_missing_criteria(seeded_db, fake_llm) -> None:
+    # First batch: safety fails — 2 criteria saved, 1 missing.
+    fake_llm.raise_for = {"safety"}
+    await evaluate_batch(seeded_db, limit=10, judge_model="judge/test")
+
+    # Second batch must call ONLY safety, not re-bill the already-scored ones.
+    fake_llm.raise_for = set()
+    fake_llm.calls.clear()
+    summary = await evaluate_batch(seeded_db, limit=10, judge_model="judge/test")
+
+    called = [c["criterion"] for c in fake_llm.calls]
+    assert called == ["safety"], f"expected only safety, got {called}"
+    assert summary["scored"] == 1
+    assert summary["failed"] == 0
+
+
+@pytest.mark.asyncio
 async def test_score_out_of_range_is_clamped(seeded_db, fake_llm) -> None:
     fake_llm.responses["relevance"] = '{"score": 12, "reason": "huge"}'
     fake_llm.responses["safety"]    = '{"score": -3, "reason": "neg"}'

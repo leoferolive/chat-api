@@ -66,7 +66,9 @@ async def evaluate_batch(
     scored = 0
     failed = 0
     for turn in turns:
-        for criterion in CRITERIA:
+        # Only the criteria that still lack a score for this turn — a
+        # previous batch may have succeeded on some and failed on others.
+        for criterion in turn.get("missing_criteria", list(CRITERIA)):
             try:
                 score, reason = await _score_one(
                     criterion=criterion,
