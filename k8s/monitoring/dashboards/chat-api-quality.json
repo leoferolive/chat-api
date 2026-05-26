@@ -1,0 +1,126 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "Operations", "tooltip": "", "type": "link", "url": "/d/chat-api-operations"},
+    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "FinOps", "tooltip": "", "type": "link", "url": "/d/chat-api-finops"}
+  ],
+  "liveNow": false,
+  "panels": [
+    {"type": "row", "id": 100, "title": "Scores LLM-as-Judge (24h)", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "panels": []},
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 0, "max": 5, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 3}, {"color": "yellow", "value": 3.5}, {"color": "green", "value": 4}]}}},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "sum(chat_api_judge_score_avg{criterion=\"relevance\"} * chat_api_judge_evaluations_total{criterion=\"relevance\"}) / clamp_min(sum(chat_api_judge_evaluations_total{criterion=\"relevance\"}), 1)", "legendFormat": "Relevância", "refId": "A"}
+      ],
+      "title": "Relevância (média)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 0, "max": 5, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 3}, {"color": "yellow", "value": 3.5}, {"color": "green", "value": 4}]}}},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "sum(chat_api_judge_score_avg{criterion=\"groundedness\"} * chat_api_judge_evaluations_total{criterion=\"groundedness\"}) / clamp_min(sum(chat_api_judge_evaluations_total{criterion=\"groundedness\"}), 1)", "legendFormat": "Groundedness", "refId": "A"}
+      ],
+      "title": "Groundedness (média)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 0, "max": 5, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 3}, {"color": "yellow", "value": 3.5}, {"color": "green", "value": 4}]}}},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "sum(chat_api_judge_score_avg{criterion=\"safety\"} * chat_api_judge_evaluations_total{criterion=\"safety\"}) / clamp_min(sum(chat_api_judge_evaluations_total{criterion=\"safety\"}), 1)", "legendFormat": "Safety", "refId": "A"}
+      ],
+      "title": "Safety (média)",
+      "type": "stat"
+    },
+    {"type": "row", "id": 200, "title": "Evolução", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}, "panels": []},
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2, "min": 0, "max": 5, "color": {"mode": "palette-classic"}, "custom": {"lineWidth": 2}}, "overrides": [{"matcher": {"id": "byName", "options": "SLO"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}, {"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}}]}]},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 8},
+      "id": 4,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "min"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (criterion) (chat_api_judge_score_avg * chat_api_judge_evaluations_total) / clamp_min(sum by (criterion) (chat_api_judge_evaluations_total), 1)", "legendFormat": "{{criterion}}", "refId": "A"},
+        {"expr": "vector(4)", "legendFormat": "SLO", "refId": "B"}
+      ],
+      "title": "Score médio por critério (linha vermelha = SLO 4.0)",
+      "type": "timeseries"
+    },
+    {"type": "row", "id": 300, "title": "Distribuição de veredictos", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17}, "panels": []},
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.25}]}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "id": 5,
+      "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true},
+      "targets": [
+        {"expr": "sum by (criterion) (chat_api_judge_verdicts_total{verdict=\"fail\"}) / clamp_min(sum by (criterion) (chat_api_judge_verdicts_total), 1)", "legendFormat": "{{criterion}}", "refId": "A"}
+      ],
+      "title": "% de respostas fail (score < 3) por critério (24h)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "id": 6,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (criterion, verdict) (chat_api_judge_verdicts_total)", "legendFormat": "{{criterion}} / {{verdict}}", "refId": "A"}
+      ],
+      "title": "Contagem de veredictos por critério (24h)",
+      "type": "barchart"
+    },
+    {"type": "row", "id": 400, "title": "Sinal técnico de qualidade", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26}, "panels": []},
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
+      "id": 7,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (outcome) (rate(chat_api_router_outcome_total{outcome=~\"parse_error|invalid_paths\"}[5m])) * 60", "legendFormat": "{{outcome}}", "refId": "A"}
+      ],
+      "title": "Router parse_error / invalid_paths por minuto",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (answer_model) (chat_api_judge_evaluations_total)", "legendFormat": "{{answer_model}}", "refId": "A"}
+      ],
+      "title": "Volume avaliado por answer model (24h)",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["chat-api", "quality"],
+  "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "America/Sao_Paulo",
+  "title": "chat-api / Quality",
+  "uid": "chat-api-quality",
+  "version": 1,
+  "weekStart": ""
+}
