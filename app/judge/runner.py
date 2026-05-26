@@ -13,7 +13,11 @@ from .prompts import CRITERIA, judge_prompt
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_JUDGE_MODEL = "gemini/gemini-2.5-flash-lite"
+# Route the judge through OpenRouter instead of the Google API direct.
+# The Gemini free tier (5 RPM) was throttling the batch hard — only ~34
+# scores landed in 11h. OpenRouter has its own pricing on this model but
+# no per-minute cap at our scale.
+DEFAULT_JUDGE_MODEL = "openrouter/google/gemini-2.5-flash-lite"
 
 
 def _coerce_score(parsed: dict) -> tuple[float, str]:
