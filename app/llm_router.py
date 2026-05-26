@@ -8,6 +8,7 @@ caller (we don't restart mid-stream).
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -16,9 +17,12 @@ import litellm
 import structlog
 
 from .config import get_settings
+from .cost import compute_cost, provider_of
 from .metrics import (
+    COST_USD_TOTAL,
     PROVIDER_ATTEMPTS_TOTAL,
     PROVIDER_FAILURES_TOTAL,
+    STAGE_DURATION_SECONDS,
     TOKENS_TOTAL,
 )
 
@@ -74,6 +78,7 @@ async def stream_completion(
     *,
     temperature: float = 0.3,
     max_tokens: int | None = None,
+    stage: str = "answer",
 ) -> AsyncIterator[dict]:
     """Yield events as the LLM streams.
 
@@ -96,6 +101,9 @@ async def stream_completion(
     for model in providers:
         attempts.append(model)
         litellm_model, extra = _provider_kwargs(model)
+        # Reset per-provider so failover time of earlier providers doesn't
+        # pollute the latency observed for the one that actually streamed.
+        started = time.monotonic()
         try:
             stream = await litellm.acompletion(
                 model=litellm_model,
@@ -150,9 +158,19 @@ async def stream_completion(
             completion_tokens = max(1, len(full_text.split()))
         PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="success").inc()
         if prompt_tokens:
-            TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
+            TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(prompt_tokens)
         if completion_tokens:
-            TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
+            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(
+                completion_tokens
+            )
+        cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+        if cost_usd:
+            COST_USD_TOTAL.labels(
+                model=model, provider=provider_of(model), stage=stage
+            ).inc(cost_usd)
+        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(
+            time.monotonic() - started
+        )
         yield {
             "type": "done",
             "model": model,
@@ -160,6 +178,7 @@ async def stream_completion(
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
             },
+            "cost_usd": cost_usd,
             "attempts": attempts,
             "text": full_text,
         }
@@ -178,6 +197,7 @@ async def complete_once(
     max_tokens: int = 200,
     response_format: dict | None = None,
     validator: Callable[[str], Any] | None = None,
+    stage: str = "router",
 ) -> dict:
     """Run a single non-streaming completion with provider failover.
 
@@ -201,6 +221,8 @@ async def complete_once(
     for model in providers:
         attempts.append(model)
         litellm_model, extra = _provider_kwargs(model)
+        # Same per-provider reset as stream_completion.
+        started = time.monotonic()
         kwargs: dict = {
             "model": litellm_model,
             "messages": messages,
@@ -238,20 +260,37 @@ async def complete_once(
                 PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
                 # Token usage is still recorded — the provider did spend tokens.
                 if prompt_tokens:
-                    TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
-                if completion_tokens:
-                    TOKENS_TOTAL.labels(kind="completion", model=model).inc(
-                        completion_tokens
+                    TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(
+                        prompt_tokens
                     )
+                if completion_tokens:
+                    TOKENS_TOTAL.labels(
+                        kind="completion", model=model, stage=stage
+                    ).inc(completion_tokens)
+                cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+                if cost_usd:
+                    COST_USD_TOTAL.labels(
+                        model=model, provider=provider_of(model), stage=stage
+                    ).inc(cost_usd)
                 last_err = exc
                 last_phase = "validate"
                 continue
 
         PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="success").inc()
         if prompt_tokens:
-            TOKENS_TOTAL.labels(kind="prompt", model=model).inc(prompt_tokens)
+            TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(prompt_tokens)
         if completion_tokens:
-            TOKENS_TOTAL.labels(kind="completion", model=model).inc(completion_tokens)
+            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(
+                completion_tokens
+            )
+        cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
+        if cost_usd:
+            COST_USD_TOTAL.labels(
+                model=model, provider=provider_of(model), stage=stage
+            ).inc(cost_usd)
+        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(
+            time.monotonic() - started
+        )
         result: dict = {
             "text": text,
             "model": model,
@@ -259,6 +298,7 @@ async def complete_once(
                 "prompt": prompt_tokens,
                 "completion": completion_tokens,
             },
+            "cost_usd": cost_usd,
             "attempts": attempts,
         }
         if validator is not None:

@@ -6,17 +6,24 @@ import asyncio
 import ipaddress
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Gauge,
+    generate_latest,
+)
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .config import Settings, get_settings
+from .cost import provider_of
 from .db import Database, hash_ip
 from .guards import (
     SESSION_COOKIE,
@@ -35,12 +42,13 @@ from .metrics import (
     COST_GATE_HITS_TOTAL,
     DAILY_CALLS,
     RATE_LIMIT_HITS_TOTAL,
+    SESSIONS_CREATED_TOTAL,
     UNKNOWN_MODEL,
     set_info,
 )
 from .models import ChatRequest
 from .prompt import build_messages, refusal_text
-from .router import pick_paths
+from .router import decision_hash, pick_paths
 from .sse import build_response, sse_payload
 from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name
 from .wiki_loader import WikiLoader
@@ -123,6 +131,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        # Honour an upstream X-Request-Id (set by Traefik / a tracing proxy)
+        # so a request crossing services can be correlated by a single id.
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=rid)
+        try:
+            response = await call_next(request)
+        finally:
+            structlog.contextvars.clear_contextvars()
+        response.headers["X-Request-Id"] = rid
+        return response
+
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"status": "ok"}
@@ -135,6 +157,105 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not _is_internal_host(request.headers.get("host", "")):
             return Response(status_code=404)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.get("/metrics-traffic")
+    async def metrics_traffic(request: Request) -> Response:
+        # Unique-visitor gauges built per-scrape from the SQLite. Using
+        # gauges (not counters) because "unique X in the last 24h" goes
+        # both up and down as the rolling window advances. Prometheus
+        # counters can only ever grow.
+        if not _is_internal_host(request.headers.get("host", "")):
+            return Response(status_code=404)
+        db: Database = request.app.state.db
+        now = int(time.time())
+        windows = {
+            "today": now - 24 * 3600,
+            "7d": now - 7 * 24 * 3600,
+            "30d": now - 30 * 24 * 3600,
+        }
+        reg = CollectorRegistry()
+        unique_sessions = Gauge(
+            "chat_api_unique_sessions",
+            "Distinct sessionIds with at least one user message in the window.",
+            labelnames=("window",),
+            registry=reg,
+        )
+        unique_ips = Gauge(
+            "chat_api_unique_ips",
+            "Distinct (salted) IP hashes that opened a session in the window.",
+            labelnames=("window",),
+            registry=reg,
+        )
+        sessions_by_lang = Gauge(
+            "chat_api_sessions_by_lang",
+            "Sessions created in the 24h window, grouped by lang.",
+            labelnames=("lang",),
+            registry=reg,
+        )
+        for window_name, since_ts in windows.items():
+            unique_sessions.labels(window=window_name).set(
+                await db.distinct_sessions_since(since_ts)
+            )
+            unique_ips.labels(window=window_name).set(
+                await db.distinct_ips_since(since_ts)
+            )
+        for row in await db.sessions_by_lang_since(windows["today"]):
+            sessions_by_lang.labels(lang=row["lang"]).set(row["count"])
+        return Response(
+            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
+        )
+
+    @app.get("/metrics-judge")
+    async def metrics_judge(request: Request) -> Response:
+        # Same internal-only guard as /metrics. The judge runs in a separate
+        # CronJob process, so its counters live in the shared SQLite — we
+        # build a fresh CollectorRegistry per scrape from current aggregates.
+        if not _is_internal_host(request.headers.get("host", "")):
+            return Response(status_code=404)
+        db: Database = request.app.state.db
+        # 24h window — long enough to survive a Prometheus restart, short
+        # enough that "average score yesterday" stays informative.
+        since_ts = int(time.time()) - 24 * 3600
+        aggregates = await db.judge_score_aggregates(since_ts)
+        verdicts = await db.judge_verdict_counts(since_ts)
+
+        reg = CollectorRegistry()
+        score_avg = Gauge(
+            "chat_api_judge_score_avg",
+            "Average judge score (24h window) per criterion / answer model / judge model.",
+            labelnames=("criterion", "answer_model", "judge_model"),
+            registry=reg,
+        )
+        score_count = Gauge(
+            "chat_api_judge_evaluations_total",
+            "Number of judge evaluations recorded in the 24h window.",
+            labelnames=("criterion", "answer_model", "judge_model"),
+            registry=reg,
+        )
+        verdict_count = Gauge(
+            "chat_api_judge_verdicts_total",
+            "Judge verdict bucket counts (pass>=4, warn=3, fail<3) in the 24h window.",
+            labelnames=("criterion", "verdict"),
+            registry=reg,
+        )
+        for row in aggregates:
+            score_avg.labels(
+                criterion=row["criterion"],
+                answer_model=row["answer_model"],
+                judge_model=row["judge_model"],
+            ).set(row["avg_score"])
+            score_count.labels(
+                criterion=row["criterion"],
+                answer_model=row["answer_model"],
+                judge_model=row["judge_model"],
+            ).set(row["count"])
+        for row in verdicts:
+            verdict_count.labels(
+                criterion=row["criterion"], verdict=row["verdict"]
+            ).set(row["count"])
+        return Response(
+            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
+        )
 
     @app.post("/chat/stream")
     @limiter.limit(settings.rate_limit_per_ip)
@@ -233,9 +354,15 @@ async def _handle_chat_stream(
 
     # Persist session row + user turn (fire-and-forget).
     ip_hashed = ip_hashed_pre
-    asyncio.create_task(
-        db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw)
-    )
+
+    async def _upsert_and_count() -> None:
+        created = await db.upsert_session(
+            body.sessionId, ip_hashed, body.lang, user_name=user_raw
+        )
+        if created:
+            SESSIONS_CREATED_TOTAL.labels(lang=body.lang).inc()
+
+    asyncio.create_task(_upsert_and_count())
     user_msg = body.messages[-1]
     if user_msg.role == "user":
         asyncio.create_task(
@@ -310,12 +437,14 @@ async def _handle_chat_stream(
 
     pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
     messages_for_llm = build_messages(body.lang, pages, body.messages)
+    paths_hash = decision_hash(selected_paths)
 
     async def event_gen() -> AsyncIterator[dict]:
         model_used = ""
         full_text = ""
         prompt_tokens = 0
         completion_tokens = 0
+        cost_usd = 0.0
         provider_attempts: list[str] = []
         try:
             async for ev in stream_completion(messages_for_llm, settings.provider_list):
@@ -329,6 +458,7 @@ async def _handle_chat_stream(
                     full_text = ev.get("text", "")
                     prompt_tokens = ev["tokens"].get("prompt", 0)
                     completion_tokens = ev["tokens"].get("completion", 0)
+                    cost_usd = ev.get("cost_usd", 0.0)
                     provider_attempts = ev.get("attempts", [])
                     yield {
                         "data": sse_payload(
@@ -379,13 +509,17 @@ async def _handle_chat_stream(
         ).observe(elapsed)
         log.info(
             "chat_completed",
+            stage="answer",
             session_id=body.sessionId,
             lang=body.lang,
             user=user_label,
             model_used=model_used,
+            provider=provider_of(model_used),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            cost_usd=cost_usd,
             latency_ms=latency_ms,
+            decision_paths=paths_hash,
             provider_attempts=provider_attempts,
             wiki_pages=[p.path for p in pages],
         )
@@ -400,6 +534,7 @@ async def _handle_chat_stream(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     latency_ms=latency_ms,
+                    cost_usd=cost_usd,
                 )
             )
 

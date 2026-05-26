@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chat-api-judge
+  namespace: chat-api-dev
+spec:
+  # 6x/day in dev (same cadence as prod) — traffic is light enough that
+  # waiting 4h between batches is fine, and the judge call itself costs
+  # tokens, so a tighter cadence isn't worth it.
+  schedule: "0 */4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # Cap a run at 30 min so a stuck LiteLLM call doesn't hold the
+      # Job alive past the next 4h tick (which `Forbid` would then skip).
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: OnFailure
+          # Same UID/GID as the main app, so we read/write the same SQLite
+          # without permission shuffling.
+          securityContext:
+            fsGroup: 65533
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: chat-api-db
+          containers:
+            - name: judge
+              image: ghcr.io/leoferolive/chat-api-dev:latest
+              imagePullPolicy: Always
+              command: ["python", "-m", "app.judge.cli", "--once", "--limit", "50"]
+              envFrom:
+                - configMapRef:
+                    name: chat-api-config
+                - secretRef:
+                    name: chat-api-secrets
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+          imagePullSecrets:
+            - name: ghcr-secret

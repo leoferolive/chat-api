@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chat-api-judge
+  namespace: chat-api
+spec:
+  # 6x/day — traffic is low enough that hourly was overkill. A regression
+  # surfaces within 4h, which still beats the time it takes to manually
+  # notice via reading turns.
+  schedule: "0 */4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 65533
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: chat-api-db
+          containers:
+            - name: judge
+              image: ghcr.io/leoferolive/chat-api:latest
+              imagePullPolicy: Always
+              command: ["python", "-m", "app.judge.cli", "--once", "--limit", "100"]
+              envFrom:
+                - configMapRef:
+                    name: chat-api-config
+                - secretRef:
+                    name: chat-api-secrets
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+          imagePullSecrets:
+            - name: ghcr-secret
