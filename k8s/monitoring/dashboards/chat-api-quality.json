@@ -55,7 +55,7 @@
       "id": 4,
       "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "min"]}, "tooltip": {"mode": "multi"}},
       "targets": [
-        {"expr": "avg by (criterion) (chat_api_judge_score_avg)", "legendFormat": "{{criterion}}", "refId": "A"},
+        {"expr": "sum by (criterion) (chat_api_judge_score_avg * chat_api_judge_evaluations_total) / clamp_min(sum by (criterion) (chat_api_judge_evaluations_total), 1)", "legendFormat": "{{criterion}}", "refId": "A"},
         {"expr": "vector(4)", "legendFormat": "SLO", "refId": "B"}
       ],
       "title": "Score médio por critério (linha vermelha = SLO 4.0)",

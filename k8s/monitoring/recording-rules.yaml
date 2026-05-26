@@ -18,7 +18,10 @@ spec:
           expr: sum by (namespace, model, provider, stage) (rate(chat_api_cost_usd_total[1h]))
         - record: chat_api:cost_usd:rate24h
           expr: sum by (namespace, model, provider, stage) (rate(chat_api_cost_usd_total[24h]))
+        # increase24h / increase7d keep the same grouping as the rates so
+        # FinOps panels can break the spend down by model/provider/stage.
+        # Stat panels still call sum(...) on top, totalling correctly.
         - record: chat_api:cost_usd:increase24h
-          expr: sum by (namespace) (increase(chat_api_cost_usd_total[24h]))
+          expr: sum by (namespace, model, provider, stage) (increase(chat_api_cost_usd_total[24h]))
         - record: chat_api:cost_usd:increase7d
-          expr: sum by (namespace) (increase(chat_api_cost_usd_total[7d]))
+          expr: sum by (namespace, model, provider, stage) (increase(chat_api_cost_usd_total[7d]))

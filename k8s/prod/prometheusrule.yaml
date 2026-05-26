@@ -59,16 +59,23 @@ spec:
         - alert: ChatApiQualityRegression
           # Avg score por critério caiu abaixo do SLO 3.5. Guarded com
           # at-least 5 evaluations p/ evitar fire em janela com pouco volume.
+          # IMPORTANTE: filtros namespace="chat-api" em TODOS os selectors
+          # — sem eles, o kps shared agregaria dev+prod e dev (volume baixo)
+          # poderia dominar ou mascarar regressão real em prod.
           expr: |
             (
               sum by (criterion) (
-                chat_api_judge_score_avg * chat_api_judge_evaluations_total
+                chat_api_judge_score_avg{namespace="chat-api"}
+                  * chat_api_judge_evaluations_total{namespace="chat-api"}
               )
               /
-              clamp_min(sum by (criterion) (chat_api_judge_evaluations_total), 1)
+              clamp_min(
+                sum by (criterion) (chat_api_judge_evaluations_total{namespace="chat-api"}),
+                1
+              )
             ) < 3.5
               and
-            sum by (criterion) (chat_api_judge_evaluations_total) >= 5
+            sum by (criterion) (chat_api_judge_evaluations_total{namespace="chat-api"}) >= 5
           for: 30m
           labels:
             severity: warning
