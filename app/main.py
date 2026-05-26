@@ -23,6 +23,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .config import Settings, get_settings
+from .cost import provider_of
 from .db import Database, hash_ip
 from .guards import (
     SESSION_COOKIE,
@@ -47,7 +48,6 @@ from .metrics import (
 )
 from .models import ChatRequest
 from .prompt import build_messages, refusal_text
-from .cost import provider_of
 from .router import decision_hash, pick_paths
 from .sse import build_response, sse_payload
 from .user_identity import cap_user_label, normalize_user_label, sanitize_user_name

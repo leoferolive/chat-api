@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
 
-from app import judge as judge_mod
 from app.db import Database
 from app.judge.prompts import CRITERIA, judge_prompt
 from app.judge.runner import evaluate_batch
-
 
 # --- prompts ----------------------------------------------------------------
 
