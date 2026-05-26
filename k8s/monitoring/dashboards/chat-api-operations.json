@@ -103,7 +103,8 @@
         }
       ],
       "title": "Sessões únicas",
-      "type": "stat"
+      "type": "stat",
+      "description": "Sessões únicas (sessionIds com ao menos uma mensagem user) em cada janela. Calculado por SQL no /metrics-traffic — é um snapshot da janela móvel, não monotônico. Use as 3 janelas (24h / 7d / 30d) para sentir tendência de retenção. Saúdavel: 7d > 24h × 3 (visitantes recorrentes)."
     },
     {
       "datasource": {
@@ -157,7 +158,8 @@
         }
       ],
       "title": "IPs únicos",
-      "type": "stat"
+      "type": "stat",
+      "description": "IPs únicos (hash SHA-256 com salt, nunca raw) que abriram sessão. Diferença vs 'Sessões únicas': um IP pode iniciar várias sessões (navegação anônima, sessões expiradas). IP/sessão ≪ 1 sugere bot ou loop; ≈1 é usuário humano típico."
     },
     {
       "datasource": {
@@ -196,7 +198,8 @@
         }
       ],
       "title": "Novas sessões/h por lang",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Taxa de criação de novas sessões por hora, separada por idioma. Counter incrementa só em INSERT real (probe SELECT 1 antes do upsert), então duas mensagens da mesma sessão = 1 incremento, não 2. Pico súbito = tráfego orgânico ou ataque; vale checar 'Chats/min'."
     },
     {
       "datasource": {
@@ -231,7 +234,8 @@
         }
       ],
       "title": "Sessões hoje por lang",
-      "type": "bargauge"
+      "type": "bargauge",
+      "description": "Sessões criadas nas últimas 24h agrupadas por lang. Útil para entender mix de idiomas e priorizar localização da wiki."
     },
     {
       "type": "row",
@@ -283,7 +287,8 @@
         }
       ],
       "title": "Chats/min por status",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Throughput por status: ok = completou com texto; error = stream falhou ou all-providers-failed; refused = router devolveu paths=[] (off-topic) e respondemos refusal sem LLM. Sustained > 1 chat/min de error é sinal de degradação upstream."
     },
     {
       "datasource": {
@@ -326,7 +331,8 @@
         }
       ],
       "title": "Tokens/s (completion) por stage e model",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Tokens de completion gerados por segundo, quebrado por stage (router vs answer) e modelo. Router tipicamente << answer (router só lê index.md e escolhe paths). Spike em router pode indicar contexto inflado ou fallback caro."
     },
     {
       "type": "row",
@@ -388,7 +394,8 @@
         }
       ],
       "title": "Latência end-to-end (p50 / p95 / p99)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Latência total do POST /chat/stream — inclui Turnstile, cost gate, router, build context, stream do answer. p50 é a experiência típica; p99 mostra cauda (provider lento ou wiki grande). Alvo: p95 < 10s."
     },
     {
       "datasource": {
@@ -436,7 +443,8 @@
         }
       ],
       "title": "Latência por stage (router vs answer)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Latência de uma chamada LLM individual por stage. Permite isolar onde o tempo é gasto: se p50 router > p50 answer, o gargalo é a seleção de páginas (provavelmente latência do provider, não tamanho do prompt)."
     },
     {
       "type": "row",
@@ -492,7 +500,8 @@
         }
       ],
       "title": "Provider failures/s por phase",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Falhas por provider e phase: open = não conectou (transport); early = conectou mas erro antes do 1º token; mid = morreu no meio do stream; validate = router devolveu resposta não-parseável. Provider primário falhando em open+early = trocar order; mid = bug no provider, espere."
     },
     {
       "datasource": {
@@ -544,7 +553,8 @@
         }
       ],
       "title": "Fallback rate (10m)",
-      "type": "gauge"
+      "type": "gauge",
+      "description": "Razão entre chamadas que ativaram failover (não-primário) e total. phase!='open' indica provider primário caiu cedo (open) ou no meio. > 30% sustained = primário degradado mesmo que o secundário esteja cobrindo (custo+latência subindo silenciosamente)."
     },
     {
       "datasource": {
@@ -583,7 +593,8 @@
         }
       ],
       "title": "Router outcomes/min (ok / empty / parse_error / provider_error / invalid_paths)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Outcomes do router LLM: ok = paths válidos selecionados; empty = router decidiu off-topic; parse_error = JSON inválido (failover já tratou); provider_error = todos providers falharam; invalid_paths = router alucinou caminhos. Spike em invalid_paths sugere mudança recente na wiki."
     },
     {
       "datasource": {
@@ -622,7 +633,8 @@
         }
       ],
       "title": "CPU (cores) — chat-api",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Consumo de CPU do container chat-api por pod. Picos correlatos com spikes em latência podem indicar CPU throttling (compare com o alerta ChatApiPodCpuThrottling). Limit em prod: 500m."
     }
   ],
   "refresh": "30s",

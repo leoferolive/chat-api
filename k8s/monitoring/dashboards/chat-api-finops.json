@@ -1,123 +1,510 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
   "links": [
-    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "Operations", "tooltip": "", "type": "link", "url": "/d/chat-api-operations"},
-    {"asDropdown": false, "icon": "external link", "includeVars": true, "keepTime": true, "tags": ["chat-api"], "targetBlank": false, "title": "Quality", "tooltip": "", "type": "link", "url": "/d/chat-api-quality"}
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "chat-api"
+      ],
+      "targetBlank": false,
+      "title": "Operations",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/chat-api-operations"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "chat-api"
+      ],
+      "targetBlank": false,
+      "title": "Quality",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/chat-api-quality"
+    }
   ],
   "liveNow": false,
   "panels": [
-    {"type": "row", "id": 100, "title": "Resumo financeiro", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 10}]}}},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 1},
+      "type": "row",
+      "id": 100,
+      "title": "Resumo financeiro",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
-      "options": {"colorMode": "background", "graphMode": "area", "textMode": "auto"},
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
-        {"expr": "sum(chat_api:cost_usd:increase24h{namespace=~\"$namespace\"})", "refId": "A"}
+        {
+          "expr": "sum(chat_api:cost_usd:increase24h{namespace=~\"$namespace\"})",
+          "refId": "A"
+        }
       ],
       "title": "Gasto últimas 24h",
-      "type": "stat"
+      "type": "stat",
+      "description": "Gasto estimado em USD nas últimas 24h. Soma do counter chat_api_cost_usd_total (calculado via litellm.cost_per_token). Modelos sem pricing na tabela do LiteLLM contam como 0 — vide log 'cost_lookup_failed'. Thresholds: verde < $5, amarelo $5-10, vermelho > $10 (também aciona alerta)."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 35}, {"color": "red", "value": 70}]}}},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 1},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "red",
+                "value": 70
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
       "id": 2,
-      "options": {"colorMode": "background", "graphMode": "area", "textMode": "auto"},
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
-        {"expr": "sum(chat_api:cost_usd:increase7d{namespace=~\"$namespace\"})", "refId": "A"}
+        {
+          "expr": "sum(chat_api:cost_usd:increase7d{namespace=~\"$namespace\"})",
+          "refId": "A"
+        }
       ],
       "title": "Gasto últimos 7d",
-      "type": "stat"
+      "type": "stat",
+      "description": "Gasto últimos 7 dias. Janela rolling, escala 7× do diário. Use para detectar tendência semanal antes de virar dia."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 150}, {"color": "red", "value": 300}]}}},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 1},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 150
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
       "id": 3,
-      "options": {"colorMode": "background", "graphMode": "area", "textMode": "auto"},
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
-        {"expr": "sum(chat_api:cost_usd:increase7d{namespace=~\"$namespace\"}) / 7 * 30", "refId": "A"}
+        {
+          "expr": "sum(chat_api:cost_usd:increase7d{namespace=~\"$namespace\"}) / 7 * 30",
+          "refId": "A"
+        }
       ],
       "title": "Projeção mensal (linear)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Projeção mensal = (gasto 7d / 7) × 30. Linear, não considera sazonalidade nem crescimento. Cruzar com tráfego para decidir se vale otimizar prompt ou pular pra modelo mais barato."
     },
-    {"type": "row", "id": 200, "title": "Breakdown", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "palette-classic"}, "custom": {"stacking": {"mode": "normal"}}}},
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8},
+      "type": "row",
+      "id": 200,
+      "title": "Breakdown",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "id": 4,
-      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "max", "sum"]}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "last",
+            "max",
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (model) (rate(chat_api_cost_usd_total{namespace=~\"$namespace\"}[5m])) * 3600", "legendFormat": "{{model}}", "refId": "A"}
+        {
+          "expr": "sum by (model) (rate(chat_api_cost_usd_total{namespace=~\"$namespace\"}[5m])) * 3600",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
       ],
       "title": "Custo $/hora por modelo (stack)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Custo $/hora empilhado por modelo. Altura total = gasto/h real; cor = contribuição de cada modelo. Se o stack vira majoritariamente um modelo, considere se vale fallback pra outro mais barato."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"}, "thresholds": {"mode": "percentage", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 80}]}}},
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "id": 5,
-      "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "valueMode": "color"},
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
       "targets": [
-        {"expr": "topk(5, sum by (model) (chat_api:cost_usd:increase24h{namespace=~\"$namespace\"}))", "legendFormat": "{{model}}", "refId": "A"}
+        {
+          "expr": "topk(5, sum by (model) (chat_api:cost_usd:increase24h{namespace=~\"$namespace\"}))",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
       ],
       "title": "Top 5 modelos por custo (24h)",
-      "type": "bargauge"
+      "type": "bargauge",
+      "description": "Top 5 modelos que mais geraram custo nas últimas 24h. Combinado com 'Custo médio por chat', mostra onde otimizar pricing first. Modelos zero não aparecem (filtrados pelo recording rule)."
     },
-    {"type": "row", "id": 300, "title": "Tokens e eficiência", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17}, "panels": []},
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}, "custom": {"stacking": {"mode": "normal"}}}},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "type": "row",
+      "id": 300,
+      "title": "Tokens e eficiência",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "id": 6,
-      "options": {"legend": {"displayMode": "table", "placement": "right", "values": ["last", "sum"]}, "tooltip": {"mode": "multi"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "last",
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        {"expr": "sum by (kind) (rate(chat_api_tokens_total{namespace=~\"$namespace\"}[5m])) * 60", "legendFormat": "{{kind}}", "refId": "A"}
+        {
+          "expr": "sum by (kind) (rate(chat_api_tokens_total{namespace=~\"$namespace\"}[5m])) * 60",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
       ],
       "title": "Tokens/min prompt vs completion",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Tokens prompt vs completion por minuto. Razão prompt:completion alta (> 5:1) = contexto inflado (wiki grande, histórico longo). Inverso saudável: ~1:1 a 1:3 em chat conversacional."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 5, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.005}, {"color": "red", "value": 0.02}]}}},
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 18},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 5,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.005
+              },
+              {
+                "color": "red",
+                "value": 0.02
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 18
+      },
       "id": 7,
-      "options": {"colorMode": "value", "graphMode": "area", "textMode": "auto"},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
       "targets": [
-        {"expr": "sum(rate(chat_api_cost_usd_total{namespace=~\"$namespace\"}[1h])) / clamp_min(sum(rate(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\"}[1h])), 1e-9)", "refId": "A"}
+        {
+          "expr": "sum(rate(chat_api_cost_usd_total{namespace=~\"$namespace\"}[1h])) / clamp_min(sum(rate(chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\"}[1h])), 1e-9)",
+          "refId": "A"
+        }
       ],
       "title": "Custo médio por chat (1h)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Custo médio de UM chat completado com sucesso na última 1h. = total spend / chats OK. Útil pra capacity planning: 1000 chats/dia × custo = orçamento. Thresholds: verde < $0.005, amarelo $0.005-0.02, vermelho > $0.02/chat."
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 400}, {"color": "red", "value": 500}]}}},
-      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 18},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 400
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 18
+      },
       "id": 8,
-      "options": {"orientation": "horizontal", "showThresholdMarkers": true},
+      "options": {
+        "orientation": "horizontal",
+        "showThresholdMarkers": true
+      },
       "targets": [
-        {"expr": "max(chat_api_daily_calls{namespace=~\"$namespace\"})", "refId": "A"}
+        {
+          "expr": "max(chat_api_daily_calls{namespace=~\"$namespace\"})",
+          "refId": "A"
+        }
       ],
       "title": "Chamadas LLM hoje (vs DAILY_LLM_CALL_LIMIT)",
-      "type": "gauge"
+      "type": "gauge",
+      "description": "Chamadas LLM contadas hoje pela cost gate (incrementado pré-router, mesmo se o usuário for recusado). Compare com DAILY_LLM_CALL_LIMIT (env). Quando atinge, cost_gate_check rejeita todo /chat/stream — vide alerta ChatApiCostGateHit."
     }
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["chat-api", "finops"],
+  "tags": [
+    "chat-api",
+    "finops"
+  ],
   "templating": {
     "list": [
       {
-        "current": {"text": "All", "value": "$__all"},
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "includeAll": true,
         "label": "Namespace",
         "multi": true,
@@ -130,7 +517,10 @@
       }
     ]
   },
-  "time": {"from": "now-24h", "to": "now"},
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "America/Sao_Paulo",
   "title": "chat-api / FinOps",
