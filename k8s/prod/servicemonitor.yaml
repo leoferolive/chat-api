@@ -19,3 +19,12 @@ spec:
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
+    - port: http
+      path: /metrics-judge
+      # CronJob runs every 4h in prod — scraping once per minute is fine.
+      interval: 60s
+      scrapeTimeout: 10s
+    - port: http
+      path: /metrics-traffic
+      interval: 60s
+      scrapeTimeout: 10s

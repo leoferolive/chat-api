@@ -41,6 +41,49 @@ spec:
             summary: "chat-api: cost gate atingido"
             description: "DAILY_LLM_CALL_LIMIT bloqueou requests nos últimos 5min ({{ $value | humanize }} bloqueios)."
 
+        - alert: ChatApiCostBudgetExceeded
+          # Disparado quando o gasto em USD nas últimas 24h passa do
+          # orçamento configurado. Em prod, 10 USD/dia é o teto desejado.
+          expr: sum(chat_api:cost_usd:increase24h{namespace="chat-api"}) > 10
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: gasto LLM 24h > $10"
+            description: "Gasto últimas 24h: ${{ $value | humanize }}. Revisar dashboards/Finops."
+
+    - name: chat-api.quality
+      interval: 60s
+      rules:
+        - alert: ChatApiQualityRegression
+          # Avg score por critério caiu abaixo do SLO 3.5. Guarded com
+          # at-least 5 evaluations p/ evitar fire em janela com pouco volume.
+          # IMPORTANTE: filtros namespace="chat-api" em TODOS os selectors
+          # — sem eles, o kps shared agregaria dev+prod e dev (volume baixo)
+          # poderia dominar ou mascarar regressão real em prod.
+          expr: |
+            (
+              sum by (criterion) (
+                chat_api_judge_score_avg{namespace="chat-api"}
+                  * chat_api_judge_evaluations_total{namespace="chat-api"}
+              )
+              /
+              clamp_min(
+                sum by (criterion) (chat_api_judge_evaluations_total{namespace="chat-api"}),
+                1
+              )
+            ) < 3.5
+              and
+            sum by (criterion) (chat_api_judge_evaluations_total{namespace="chat-api"}) >= 5
+          for: 30m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: qualidade caiu em '{{ $labels.criterion }}'"
+            description: "Score médio do critério {{ $labels.criterion }} caiu para {{ $value | humanize }} (SLO 3.5)."
+
     - name: chat-api.abuse
       interval: 30s
       rules:
@@ -124,3 +167,19 @@ spec:
           annotations:
             summary: "chat-api: pod restartando frequentemente"
             description: "{{ $value | humanize }} restarts em 15min no pod {{ $labels.pod }}."
+
+        - alert: ChatApiHighFallbackRate
+          # > 30% das chamadas ativando o failover sustained 10min →
+          # provider primário degradado (mesmo que o secundário esteja
+          # cobrindo, o custo e a latência vão subir).
+          expr: |
+            sum(rate(chat_api_provider_failures_total{namespace="chat-api",phase!="open"}[10m]))
+              /
+            clamp_min(sum(rate(chat_api_chats_total{namespace="chat-api"}[10m])), 1e-9) > 0.3
+          for: 10m
+          labels:
+            severity: warning
+            namespace: chat-api
+          annotations:
+            summary: "chat-api: fallback rate > 30%"
+            description: "{{ $value | humanizePercentage }} das chamadas estão caindo no provider de fallback. Investigar primário."
