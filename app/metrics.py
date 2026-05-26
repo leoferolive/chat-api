@@ -68,6 +68,12 @@ DAILY_CALLS = Gauge(
     "Current count of LLM calls made today (UTC).",
 )
 
+SESSIONS_CREATED_TOTAL = Counter(
+    "chat_api_sessions_created_total",
+    "New chat sessions created (counted only on insert, not on update).",
+    labelnames=("lang",),
+)
+
 ROUTER_OUTCOME_TOTAL = Counter(
     "chat_api_router_outcome_total",
     "Outcomes of the LLM router that picks wiki pages per question.",

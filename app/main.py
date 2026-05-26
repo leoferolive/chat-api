@@ -41,6 +41,7 @@ from .metrics import (
     COST_GATE_HITS_TOTAL,
     DAILY_CALLS,
     RATE_LIMIT_HITS_TOTAL,
+    SESSIONS_CREATED_TOTAL,
     UNKNOWN_MODEL,
     set_info,
 )
@@ -156,6 +157,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not _is_internal_host(request.headers.get("host", "")):
             return Response(status_code=404)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.get("/metrics-traffic")
+    async def metrics_traffic(request: Request) -> Response:
+        # Unique-visitor gauges built per-scrape from the SQLite. Using
+        # gauges (not counters) because "unique X in the last 24h" goes
+        # both up and down as the rolling window advances. Prometheus
+        # counters can only ever grow.
+        if not _is_internal_host(request.headers.get("host", "")):
+            return Response(status_code=404)
+        db: Database = request.app.state.db
+        now = int(time.time())
+        windows = {
+            "today": now - 24 * 3600,
+            "7d": now - 7 * 24 * 3600,
+            "30d": now - 30 * 24 * 3600,
+        }
+        reg = CollectorRegistry()
+        unique_sessions = Gauge(
+            "chat_api_unique_sessions",
+            "Distinct sessionIds with at least one user message in the window.",
+            labelnames=("window",),
+            registry=reg,
+        )
+        unique_ips = Gauge(
+            "chat_api_unique_ips",
+            "Distinct (salted) IP hashes that opened a session in the window.",
+            labelnames=("window",),
+            registry=reg,
+        )
+        sessions_by_lang = Gauge(
+            "chat_api_sessions_by_lang",
+            "Sessions created in the 24h window, grouped by lang.",
+            labelnames=("lang",),
+            registry=reg,
+        )
+        for window_name, since_ts in windows.items():
+            unique_sessions.labels(window=window_name).set(
+                await db.distinct_sessions_since(since_ts)
+            )
+            unique_ips.labels(window=window_name).set(
+                await db.distinct_ips_since(since_ts)
+            )
+        for row in await db.sessions_by_lang_since(windows["today"]):
+            sessions_by_lang.labels(lang=row["lang"]).set(row["count"])
+        return Response(
+            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
+        )
 
     @app.get("/metrics-judge")
     async def metrics_judge(request: Request) -> Response:
@@ -306,9 +354,15 @@ async def _handle_chat_stream(
 
     # Persist session row + user turn (fire-and-forget).
     ip_hashed = ip_hashed_pre
-    asyncio.create_task(
-        db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw)
-    )
+
+    async def _upsert_and_count() -> None:
+        created = await db.upsert_session(
+            body.sessionId, ip_hashed, body.lang, user_name=user_raw
+        )
+        if created:
+            SESSIONS_CREATED_TOTAL.labels(lang=body.lang).inc()
+
+    asyncio.create_task(_upsert_and_count())
     user_msg = body.messages[-1]
     if user_msg.role == "user":
         asyncio.create_task(

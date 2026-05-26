@@ -4,9 +4,10 @@ metadata:
   name: chat-api-judge
   namespace: chat-api-prod
 spec:
-  # Hourly in prod — cheaper, and a quality regression doesn't need <10min
-  # detection latency when alerts also page on cost/error spikes.
-  schedule: "0 * * * *"
+  # 6x/day — traffic is low enough that hourly was overkill. A regression
+  # surfaces within 4h, which still beats the time it takes to manually
+  # notice via reading turns.
+  schedule: "0 */4 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

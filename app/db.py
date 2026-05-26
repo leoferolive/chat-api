@@ -120,8 +120,21 @@ class Database:
         ip_hash: str,
         lang: str,
         user_name: str | None = None,
-    ) -> None:
+    ) -> bool:
+        """Insert or update a session. Returns True iff a NEW session was created.
+
+        The boolean is the only reliable signal we have to drive a
+        ``sessions_created_total`` counter — SQLite's ``ON CONFLICT DO UPDATE``
+        succeeds in both branches, so we probe with ``SELECT 1`` first.
+        Best-effort: two concurrent first-message requests for the same
+        sessionId could both see "not yet there" and double-count, but
+        that's vanishingly rare and acceptable for analytics.
+        """
         assert self._conn is not None
+        async with self._conn.execute(
+            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+        ) as cur:
+            existed = await cur.fetchone() is not None
         await self._conn.execute(
             """
             INSERT INTO sessions(id, ip_hash, lang, user_name, created_at)
@@ -133,6 +146,7 @@ class Database:
             (session_id, ip_hash, lang, user_name, _now_ts()),
         )
         await self._conn.commit()
+        return not existed
 
     async def save_turn(
         self,
@@ -345,6 +359,53 @@ class Database:
             {"criterion": row[0], "verdict": row[1], "count": int(row[2])}
             for row in rows
         ]
+
+    # --- traffic counters ---------------------------------------------
+
+    async def distinct_sessions_since(self, since_ts: int) -> int:
+        """Distinct sessionIds that received at least one user message after ``since_ts``."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT m.session_id)
+            FROM messages m
+            WHERE m.role = 'user' AND m.created_at >= ?
+            """,
+            (since_ts,),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def distinct_ips_since(self, since_ts: int) -> int:
+        """Distinct IP hashes that opened a session after ``since_ts``."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT s.ip_hash)
+            FROM sessions s
+            WHERE s.ip_hash IS NOT NULL
+              AND s.ip_hash != ''
+              AND s.created_at >= ?
+            """,
+            (since_ts,),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def sessions_by_lang_since(self, since_ts: int) -> list[dict]:
+        """Per-language session counts in the window for a Grafana bar chart."""
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            SELECT COALESCE(lang, 'unknown') AS lang, COUNT(*) AS n
+            FROM sessions
+            WHERE created_at >= ?
+            GROUP BY lang
+            """,
+            (since_ts,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [{"lang": row[0], "count": int(row[1])} for row in rows]
 
     # --- legacy / per-IP -----------------------------------------------
 

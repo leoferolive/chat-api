@@ -4,8 +4,10 @@ metadata:
   name: chat-api-judge
   namespace: chat-api-dev
 spec:
-  # Tight cadence in dev so a manual smoke test produces scores quickly.
-  schedule: "*/10 * * * *"
+  # 6x/day in dev (same cadence as prod) — traffic is light enough that
+  # waiting 4h between batches is fine, and the judge call itself costs
+  # tokens, so a tighter cadence isn't worth it.
+  schedule: "0 */4 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
