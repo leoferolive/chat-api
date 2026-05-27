@@ -27,6 +27,30 @@ def provider_of(model: str) -> str:
     return model.split("/", 1)[0]
 
 
+def _pricing_candidates(model: str) -> list[str]:
+    """Yield candidate model strings to ask LiteLLM about.
+
+    LiteLLM's pricing map covers each provider's *native* model string but
+    not the OpenRouter-routed variant, even when the underlying model is
+    the same Gemini/Anthropic/OpenAI weights. So when we're routing via
+    OpenRouter, also try the equivalent native prefix as a fallback.
+    Best-effort: OpenRouter may add a small markup (~5–15%); the dashboard
+    is intended for order-of-magnitude FinOps, not invoice reconciliation.
+    """
+    candidates = [model]
+    if model.startswith("openrouter/"):
+        rest = model[len("openrouter/") :]
+        # openrouter/google/<m> → also try gemini/<m> (LiteLLM uses gemini/
+        # as the Google API prefix, not google/).
+        if rest.startswith("google/"):
+            candidates.append("gemini/" + rest[len("google/") :])
+        # openrouter/anthropic/<m> → also try anthropic/<m>.
+        # openrouter/openai/<m>    → also try openai/<m> (or just <m>).
+        # General fallback: try the rest unchanged.
+        candidates.append(rest)
+    return candidates
+
+
 def compute_cost(
     model: str,
     prompt_tokens: int,
@@ -35,13 +59,17 @@ def compute_cost(
     """USD cost for a single LLM call. Returns 0.0 if pricing is unknown."""
     if not prompt_tokens and not completion_tokens:
         return 0.0
-    try:
-        prompt_cost, completion_cost = litellm.cost_per_token(
-            model=model,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-        )
-    except Exception as exc:  # noqa: BLE001 — pricing is best-effort
-        logger.debug("cost_lookup_failed", model=model, err=str(exc))
-        return 0.0
-    return float((prompt_cost or 0.0) + (completion_cost or 0.0))
+    last_err: Exception | None = None
+    for candidate in _pricing_candidates(model):
+        try:
+            prompt_cost, completion_cost = litellm.cost_per_token(
+                model=candidate,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+        except Exception as exc:  # noqa: BLE001 — pricing is best-effort
+            last_err = exc
+            continue
+        return float((prompt_cost or 0.0) + (completion_cost or 0.0))
+    logger.debug("cost_lookup_failed", model=model, err=str(last_err))
+    return 0.0
