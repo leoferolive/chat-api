@@ -235,6 +235,23 @@
       ],
       "title": "Memória — nossagrana-api",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 32},
+      "id": 14,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "time() - process_start_time_seconds{namespace=\"nossagrana\"}",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Uptime — nossagrana-api",
+      "type": "timeseries"
     }
   ],
   "refresh": "1m",
@@ -246,6 +263,6 @@
   "timezone": "America/Sao_Paulo",
   "title": "nossagrana",
   "uid": "nossagrana",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
