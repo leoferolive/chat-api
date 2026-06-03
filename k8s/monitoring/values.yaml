@@ -212,7 +212,7 @@ grafana:
         maxIdleConns: 2
         connMaxLifetime: 14400
       secureJsonData:
-        password: "${GF_DS_NOSSALISTA_PASSWORD}"
+        password: "$__env{GF_DS_NOSSALISTA_PASSWORD}"
     - name: "PostgreSQL nossagrana (ro)"
       type: postgres
       uid: nossagrana-pg
@@ -228,7 +228,7 @@ grafana:
         maxIdleConns: 2
         connMaxLifetime: 14400
       secureJsonData:
-        password: "${GF_DS_NOSSAGRANA_PASSWORD}"
+        password: "$__env{GF_DS_NOSSAGRANA_PASSWORD}"
 
   # No SQLite, no need for the local PVC. The container still mounts an
   # emptyDir at /var/lib/grafana for plugin/cache scratch.
