@@ -635,6 +635,105 @@
       "title": "CPU (cores) — chat-api",
       "type": "timeseries",
       "description": "Consumo de CPU do container chat-api por pod. Picos correlatos com spikes em latência podem indicar CPU throttling (compare com o alerta ChatApiPodCpuThrottling). Limit em prod: 500m."
+    },
+    {
+      "type": "row",
+      "id": 400,
+      "title": "Usuários",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Usuários que interagiram no intervalo selecionado, por nº de chats OK (anônimos e overflow 'other' excluídos). Mostra o incremento no período; para quem apareceu pela 1ª vez dentro do intervalo, usa o total (evita a subcontagem do increase). O label é primeiro_nome#hash; o nome completo fica no banco em sessions.user_name.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 60,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Interações",
+            "desc": true
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(15, (sum by (user) (chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user!=\"other\"}) - sum by (user) (chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user!=\"other\"} offset $__range)) or sum by (user) (chat_api_chats_total{namespace=~\"$namespace\",status=\"ok\",user!=\"anonymous\",user!=\"other\"})) > 0",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{user}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "user": "Usuário",
+              "Value": "Interações"
+            },
+            "indexByName": {}
+          }
+        }
+      ],
+      "title": "Top usuários (interações no intervalo)",
+      "type": "table"
     }
   ],
   "refresh": "30s",
