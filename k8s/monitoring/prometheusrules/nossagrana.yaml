@@ -1,0 +1,38 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nossagrana-api
+  namespace: nossagrana
+  labels:
+    app: nossagrana-api
+    release: kps
+spec:
+  groups:
+    - name: nossagrana.health
+      interval: 30s
+      rules:
+        - alert: NossagranaHighErrorRate
+          expr: |
+            sum(rate(http_request_duration_seconds_count{namespace="nossagrana",status_code=~"5.."}[5m]))
+              /
+            sum(rate(http_request_duration_seconds_count{namespace="nossagrana"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            namespace: nossagrana
+          annotations:
+            summary: "nossagrana-api: > 5% de erros 5xx"
+            description: "Taxa de erro 5xx: {{ $value | humanizePercentage }} nos últimos 5min."
+        - alert: NossagranaApiPodNotReady
+          # `on(namespace, pod)` evita many-to-many com pods homônimos em outros namespaces.
+          expr: |
+            kube_pod_status_ready{namespace="nossagrana",condition="true"} == 0
+              and on(namespace, pod)
+            kube_pod_labels{namespace="nossagrana",label_app="nossagrana-api"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            namespace: nossagrana
+          annotations:
+            summary: "nossagrana-api: pod não-ready há 5min"
+            description: "Pod {{ $labels.pod }} sem readiness — verificar logs e /api/health."
