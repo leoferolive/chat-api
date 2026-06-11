@@ -1,0 +1,301 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "description": "Throughput de requisições HTTP por rota e método (req/s), via `rate(http_server_requests_seconds_count)` em 5m. Picos indicam carga; quedas a zero podem sinalizar indisponibilidade.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (uri, method) (rate(http_server_requests_seconds_count{namespace=\"nossalista\"}[5m]))",
+          "legendFormat": "{{method}} {{uri}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Req/s por rota",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "description": "Latência p95 das requisições HTTP por rota (segundos), via `histogram_quantile(0.95, http_server_requests_seconds_bucket)`. 95% das requisições ficam abaixo desse valor; subidas indicam degradação de performance.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{namespace=\"nossalista\"}[5m])))",
+          "legendFormat": "p95 {{uri}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Latência p95 por rota",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "color": {"mode": "palette-classic"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.01}, {"color": "red", "value": 0.05}]}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "description": "Fração de respostas com status 5xx sobre o total de requisições (em %), via `http_server_requests_seconds_count{status=~\"5..\"}`. Verde abaixo de 1%, amarelo a partir de 1%, vermelho a partir de 5%.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=\"nossalista\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{namespace=\"nossalista\"}[5m])), 0.001)",
+          "legendFormat": "erro 5xx",
+          "refId": "A"
+        }
+      ],
+      "title": "Taxa de erro 5xx",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "description": "Memória usada pela JVM por área heap/nonheap (bytes), com a linha `heap max` como limite, via Micrometer `jvm_memory_used_bytes` e `jvm_memory_max_bytes`. Heap se aproximando do max indica risco de OOM/pressão de GC.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (area) (jvm_memory_used_bytes{namespace=\"nossalista\"})",
+          "legendFormat": "heap+nonheap {{area}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum(jvm_memory_max_bytes{namespace=\"nossalista\",area=\"heap\"})",
+          "legendFormat": "heap max",
+          "refId": "B"
+        }
+      ],
+      "title": "JVM memória (heap/nonheap)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 5,
+      "description": "Uso de CPU do container por pod em cores, via `rate(container_cpu_usage_seconds_total)` em 5m (1 = 1 core). Valores próximos do limite de CPU do pod indicam throttling.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"nossalista\",container=\"nossalista\"}[5m]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU (cores)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "green"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 6,
+      "description": "Tempo desde o último start da JVM (`process_uptime_seconds`), em segundos. Quedas bruscas indicam restart/crash do pod.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "max(process_uptime_seconds{namespace=\"nossalista\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Uptime do processo (JVM)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 24},
+      "id": 10,
+      "description": "Total acumulado de usuários cadastrados (`count(*)` em `users`). Métrica de base de usuários.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Usuários totais\" FROM users;",
+          "refId": "A"
+        }
+      ],
+      "title": "Usuários totais",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 24},
+      "id": 11,
+      "description": "Novos cadastros em `users` nas janelas de 7 e 30 dias (por `created_at`). Indica velocidade de crescimento da base.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS novos_7d FROM users WHERE created_at >= now() - interval '7 days';",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS novos_30d FROM users WHERE created_at >= now() - interval '30 days';",
+          "refId": "B"
+        }
+      ],
+      "title": "Usuários novos 7d / 30d",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 24},
+      "id": 12,
+      "description": "Usuários únicos ativos (DAU em 1 dia, WAU em 7 dias) contados por `user_id` distinto em `activity_logs`. Mede engajamento recorrente.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT user_id) AS dau FROM activity_logs WHERE created_at >= now() - interval '1 day';",
+          "refId": "A"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT user_id) AS wau FROM activity_logs WHERE created_at >= now() - interval '7 days';",
+          "refId": "B"
+        }
+      ],
+      "title": "DAU / WAU (activity_logs)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.3}, {"color": "green", "value": 0.6}]}}},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 24},
+      "id": 13,
+      "description": "Fração de usuários que concluíram o onboarding = `onboarding_completed_at IS NOT NULL` / total de `users`, em %. Vermelho abaixo de 30%, amarelo de 30%, verde a partir de 60%.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "showThresholdLabels": false, "showThresholdMarkers": true},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN count(*) = 0 THEN 0 ELSE count(*) FILTER (WHERE onboarding_completed_at IS NOT NULL)::numeric / count(*) END AS taxa_onboarding FROM users;",
+          "refId": "A"
+        }
+      ],
+      "title": "Taxa de onboarding",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
+      "id": 14,
+      "description": "Distribuição de listas por tipo (`list_types` LEFT JOIN `lists`), contagem absoluta. Mostra quais categorias de lista os usuários mais criam.",
+      "options": {"legend": {"displayMode": "list", "placement": "right", "values": ["value"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"]}, "tooltip": {"mode": "single"}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT lt.name AS metric, count(l.id) AS value FROM list_types lt LEFT JOIN lists l ON l.type_id = lt.id GROUP BY lt.name ORDER BY value DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Listas por tipo",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 30},
+      "id": 15,
+      "description": "Total acumulado de itens cadastrados em todas as listas (`count(*)` em `list_items`). Volume de conteúdo gerado pelos usuários.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS itens_totais FROM list_items;",
+          "refId": "A"
+        }
+      ],
+      "title": "Itens totais",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 30},
+      "id": 16,
+      "description": "Taxa de conclusão de itens = itens com `checked=true` / total de `list_items`, em %. Indica quanto do que é planejado realmente é concluído.",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN count(*) = 0 THEN 0 ELSE count(*) FILTER (WHERE checked)::numeric / count(*) END AS taxa_conclusao FROM list_items;",
+          "refId": "A"
+        }
+      ],
+      "title": "Taxa de conclusão de itens",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "bars", "fillOpacity": 60}}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 38},
+      "id": 17,
+      "description": "Total de ações registradas por dia nos últimos 30 dias (`activity_logs` agrupado por dia). Tendência de atividade geral da plataforma ao longo do tempo.",
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossalista-pg"},
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', created_at) AS \"time\", count(*) AS \"ações/dia\" FROM activity_logs WHERE created_at >= now() - interval '30 days' GROUP BY 1 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Ações por dia (activity_logs)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nossalista"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "America/Sao_Paulo",
+  "title": "nossalista",
+  "uid": "nossalista",
+  "version": 2,
+  "weekStart": ""
+}

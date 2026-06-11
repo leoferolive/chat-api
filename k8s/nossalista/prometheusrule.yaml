@@ -1,0 +1,48 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nossalista
+  namespace: nossalista
+  labels:
+    app: nossalista
+    release: kps
+spec:
+  groups:
+    - name: nossalista.health
+      interval: 30s
+      rules:
+        - alert: NossalistaHighErrorRate
+          expr: |
+            sum(rate(http_server_requests_seconds_count{namespace="nossalista",status=~"5.."}[5m]))
+              /
+            clamp_min(sum(rate(http_server_requests_seconds_count{namespace="nossalista"}[5m])), 0.001) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            namespace: nossalista
+          annotations:
+            summary: "nossalista: > 5% de erros 5xx"
+            description: "Taxa de erro: {{ $value | humanizePercentage }} nos últimos 5min."
+
+        - alert: NossalistaPodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="nossalista",condition="true"} == 0
+              and on(namespace, pod)
+            kube_pod_labels{namespace="nossalista",label_app="nossalista"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            namespace: nossalista
+          annotations:
+            summary: "nossalista: pod não-ready há 5min"
+            description: "Pod {{ $labels.pod }} sem readiness — verificar logs e /actuator/health."
+
+        - alert: NossalistaTargetDown
+          expr: up{namespace="nossalista",job=~".*nossalista.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            namespace: nossalista
+          annotations:
+            summary: "nossalista: target de scrape down"
+            description: "Prometheus não consegue raspar /actuator/prometheus há 5min."
