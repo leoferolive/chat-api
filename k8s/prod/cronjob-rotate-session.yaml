@@ -12,6 +12,10 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      # Auto-remove o Job 2h após terminar (sucesso OU falha) — evita que um
+      # Job falho fique no cluster e mantenha o KubeJobFailed (kps) firing por
+      # dias. Ver comentário equivalente em k8s/prod/cronjob-judge.yaml.
+      ttlSecondsAfterFinished: 7200
       template:
         spec:
           serviceAccountName: chat-api-rotator

@@ -17,6 +17,10 @@ spec:
       # Cap a run at 30 min so a stuck LiteLLM call doesn't hold the
       # Job alive past the next 4h tick (which `Forbid` would then skip).
       activeDeadlineSeconds: 1800
+      # Auto-remove o Job 2h após terminar (sucesso OU falha) — evita que um
+      # Job falho fique no cluster e mantenha o KubeJobFailed (kps) firing por
+      # dias. Ver comentário equivalente em k8s/prod/cronjob-judge.yaml.
+      ttlSecondsAfterFinished: 7200
       template:
         spec:
           restartPolicy: OnFailure
