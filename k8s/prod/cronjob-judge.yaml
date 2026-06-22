@@ -15,6 +15,13 @@ spec:
     spec:
       backoffLimit: 2
       activeDeadlineSeconds: 1800
+      # Auto-remove o Job 2h após terminar (sucesso OU falha). Sem isto, um Job
+      # falho fica no cluster indefinidamente e o alerta KubeJobFailed do kps
+      # (kube_job_failed > 0) segue firing por dias — mesmo após execuções
+      # seguintes voltarem a passar. 2h ainda deixa a janela for:15m do alerta
+      # disparar (visibilidade de falha real) e dá tempo de inspecionar logs,
+      # mas limpa antes do próximo ciclo (4h), evitando alerta-fantasma.
+      ttlSecondsAfterFinished: 7200
       template:
         spec:
           restartPolicy: OnFailure
