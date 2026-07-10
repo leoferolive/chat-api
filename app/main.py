@@ -7,8 +7,9 @@ import ipaddress
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
 from fastapi import Depends, FastAPI, Request, Response
@@ -26,13 +27,12 @@ from .config import Settings, get_settings
 from .cost import provider_of
 from .db import Database, hash_ip
 from .guards import (
-    SESSION_COOKIE,
     CostGateExceeded,
     build_limiter,
     client_ip,
     cost_gate_check,
-    issue_session_token,
     require_first_message_or_session,
+    set_session_cookie,
     verify_turnstile,
 )
 from .llm_router import AllProvidersFailed, stream_completion
@@ -69,6 +69,42 @@ def _configure_logging() -> None:
 
 
 log = structlog.get_logger("chat-api")
+
+# Keeps a strong reference to every fire-and-forget task until it finishes —
+# asyncio only weakly tracks tasks created via create_task(), so without this
+# the task can be garbage-collected mid-flight. See `_fire_and_forget`.
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _fire_and_forget(coro: Coroutine[Any, Any, None], **log_ctx: Any) -> asyncio.Task[None]:
+    """Schedule ``coro`` without awaiting it, but never let its failure vanish.
+
+    A bare ``asyncio.create_task(...)`` has two footguns: (1) the task can be
+    garbage-collected before it runs if nothing holds a reference, and (2) if
+    it raises, the exception is only ever reported as a swallowed "Task
+    exception was never retrieved" warning — invisible in our structlog JSON
+    output. This keeps the task alive in a module-level set and logs any
+    exception (with caller-supplied context, e.g. session_id / turn role)
+    before dropping the reference.
+    """
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+
+    def _on_done(done_task: asyncio.Task[None]) -> None:
+        _background_tasks.discard(done_task)
+        if done_task.cancelled():
+            return
+        exc = done_task.exception()
+        if exc is not None:
+            log.error(
+                "background_task_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                **log_ctx,
+            )
+
+    task.add_done_callback(_on_done)
+    return task
 
 
 def _is_internal_host(host_header: str) -> bool:
@@ -352,15 +388,17 @@ async def _handle_chat_stream(
         if created:
             SESSIONS_CREATED_TOTAL.labels(lang=body.lang).inc()
 
-    asyncio.create_task(_upsert_and_count())
+    _fire_and_forget(_upsert_and_count(), session_id=body.sessionId, turn="session_upsert")
     user_msg = body.messages[-1]
     if user_msg.role == "user":
-        asyncio.create_task(
+        _fire_and_forget(
             db.save_turn(
                 session_id=body.sessionId,
                 role="user",
                 content=user_msg.content,
-            )
+            ),
+            session_id=body.sessionId,
+            turn="user",
         )
 
     # Bump the daily call counter once per turn, BEFORE the router runs.
@@ -384,12 +422,14 @@ async def _handle_chat_stream(
         # LLM. The router call itself was already counted above.
         refusal = refusal_text(body.lang)
         # Persist the assistant turn so the UI shows it on reload.
-        asyncio.create_task(
+        _fire_and_forget(
             db.save_turn(
                 session_id=body.sessionId,
                 role="assistant",
                 content=refusal,
-            )
+            ),
+            session_id=body.sessionId,
+            turn="assistant_refusal",
         )
         CHATS_TOTAL.labels(
             status="refused",
@@ -418,15 +458,7 @@ async def _handle_chat_stream(
 
         response = build_response(refusal_gen())
         if is_first_message:
-            token = issue_session_token(body.sessionId, settings)
-            response.set_cookie(
-                SESSION_COOKIE,
-                token,
-                httponly=True,
-                samesite="lax",
-                secure=settings.env == "prod",
-                max_age=settings.session_ttl_seconds,
-            )
+            set_session_cookie(response, body.sessionId, settings)
         return response
 
     pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
@@ -519,7 +551,7 @@ async def _handle_chat_stream(
         )
 
         if full_text:
-            asyncio.create_task(
+            _fire_and_forget(
                 db.save_turn(
                     session_id=body.sessionId,
                     role="assistant",
@@ -529,22 +561,16 @@ async def _handle_chat_stream(
                     completion_tokens=completion_tokens,
                     latency_ms=latency_ms,
                     cost_usd=cost_usd,
-                )
+                ),
+                session_id=body.sessionId,
+                turn="assistant",
             )
 
     response = build_response(event_gen())
 
     # Issue / refresh the session cookie so subsequent messages skip Turnstile.
     if is_first_message:
-        token = issue_session_token(body.sessionId, settings)
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            httponly=True,
-            samesite="lax",
-            secure=settings.env == "prod",
-            max_age=settings.session_ttl_seconds,
-        )
+        set_session_cookie(response, body.sessionId, settings)
     return response
 
 
