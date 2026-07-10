@@ -93,9 +93,7 @@ async def test_stream_options_include_usage_passed_to_litellm(
         return gen()
 
     monkeypatch.setattr(llm_router_mod.litellm, "acompletion", capturing)
-    async for _ev in stream_completion(
-        [{"role": "user", "content": "hi"}], ["mock/primary"]
-    ):
+    async for _ev in stream_completion([{"role": "user", "content": "hi"}], ["mock/primary"]):
         pass
     assert captured["kwargs"].get("stream_options") == {"include_usage": True}
 
@@ -129,9 +127,7 @@ async def test_zai_prefix_routes_to_openai_compatible(
 
     monkeypatch.setattr(llm_router_mod.litellm, "acompletion", capturing_acompletion)
 
-    async for _ev in stream_completion(
-        [{"role": "user", "content": "hi"}], ["zai/glm-4.6"]
-    ):
+    async for _ev in stream_completion([{"role": "user", "content": "hi"}], ["zai/glm-4.6"]):
         pass
 
     assert captured["model"] == "openai/glm-4.6"

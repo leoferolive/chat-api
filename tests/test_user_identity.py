@@ -23,6 +23,7 @@ def _reset_bucket():
     yield
     reset_label_bucket()
 
+
 LABEL_RE = re.compile(r"^[a-z0-9_]{1,24}#[0-9a-f]{4}$")
 
 

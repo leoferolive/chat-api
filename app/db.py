@@ -109,9 +109,7 @@ class Database:
         async with self._conn.execute("PRAGMA table_info(messages)") as cur:
             cols = {row[1] async for row in cur}
         if "cost_usd" not in cols:
-            await self._conn.execute(
-                "ALTER TABLE messages ADD COLUMN cost_usd REAL DEFAULT 0"
-            )
+            await self._conn.execute("ALTER TABLE messages ADD COLUMN cost_usd REAL DEFAULT 0")
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -137,9 +135,7 @@ class Database:
         that's vanishingly rare and acceptable for analytics.
         """
         assert self._conn is not None
-        async with self._conn.execute(
-            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
-        ) as cur:
+        async with self._conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)) as cur:
             existed = await cur.fetchone() is not None
         await self._conn.execute(
             """
@@ -208,9 +204,7 @@ class Database:
             (day,),
         )
         await self._conn.commit()
-        async with self._conn.execute(
-            "SELECT count FROM daily_calls WHERE day = ?", (day,)
-        ) as cur:
+        async with self._conn.execute("SELECT count FROM daily_calls WHERE day = ?", (day,)) as cur:
             row = await cur.fetchone()
         count = int(row[0]) if row else 0
         DAILY_CALLS.set(count)
@@ -373,10 +367,7 @@ class Database:
             (since_ts,),
         ) as cur:
             rows = await cur.fetchall()
-        return [
-            {"criterion": row[0], "verdict": row[1], "count": int(row[2])}
-            for row in rows
-        ]
+        return [{"criterion": row[0], "verdict": row[1], "count": int(row[2])} for row in rows]
 
     # --- traffic counters ---------------------------------------------
 

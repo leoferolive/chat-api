@@ -45,7 +45,9 @@ def build_limiter(default_rate: str) -> Limiter:
 # --- Turnstile ------------------------------------------------------------
 
 
-async def verify_turnstile(token: str | None, settings: Settings, *, remote_ip: str | None = None) -> bool:
+async def verify_turnstile(
+    token: str | None, settings: Settings, *, remote_ip: str | None = None
+) -> bool:
     """Validate a Turnstile token against Cloudflare. Returns True on success."""
     if settings.turnstile_disabled:
         return True

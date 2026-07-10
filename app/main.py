@@ -196,14 +196,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             unique_sessions.labels(window=window_name).set(
                 await db.distinct_sessions_since(since_ts)
             )
-            unique_ips.labels(window=window_name).set(
-                await db.distinct_ips_since(since_ts)
-            )
+            unique_ips.labels(window=window_name).set(await db.distinct_ips_since(since_ts))
         for row in await db.sessions_by_lang_since(windows["today"]):
             sessions_by_lang.labels(lang=row["lang"]).set(row["count"])
-        return Response(
-            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
-        )
+        return Response(content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/metrics-judge")
     async def metrics_judge(request: Request) -> Response:
@@ -250,12 +246,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 judge_model=row["judge_model"],
             ).set(row["count"])
         for row in verdicts:
-            verdict_count.labels(
-                criterion=row["criterion"], verdict=row["verdict"]
-            ).set(row["count"])
-        return Response(
-            content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST
-        )
+            verdict_count.labels(criterion=row["criterion"], verdict=row["verdict"]).set(
+                row["count"]
+            )
+        return Response(content=generate_latest(reg), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/chat/stream")
     @limiter.limit(settings.rate_limit_per_ip)
@@ -281,9 +275,7 @@ async def _handle_chat_stream(
     ip = client_ip(request)
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
     user_raw = sanitize_user_name(body.userName)
-    user_label = cap_user_label(
-        normalize_user_label(body.userName, salt=settings.user_hash_salt)
-    )
+    user_label = cap_user_label(normalize_user_label(body.userName, salt=settings.user_hash_salt))
 
     # Turnstile / session enforcement BEFORE we touch the LLM.
     turnstile_ok = await verify_turnstile(body.turnstileToken, settings, remote_ip=ip)
@@ -356,9 +348,7 @@ async def _handle_chat_stream(
     ip_hashed = ip_hashed_pre
 
     async def _upsert_and_count() -> None:
-        created = await db.upsert_session(
-            body.sessionId, ip_hashed, body.lang, user_name=user_raw
-        )
+        created = await db.upsert_session(body.sessionId, ip_hashed, body.lang, user_name=user_raw)
         if created:
             SESSIONS_CREATED_TOTAL.labels(lang=body.lang).inc()
 
@@ -418,7 +408,11 @@ async def _handle_chat_stream(
             yield {"data": sse_payload({"type": "token", "value": refusal})}
             yield {
                 "data": sse_payload(
-                    {"type": "done", "model": UNKNOWN_MODEL, "tokens": {"prompt": 0, "completion": 0}}
+                    {
+                        "type": "done",
+                        "model": UNKNOWN_MODEL,
+                        "tokens": {"prompt": 0, "completion": 0},
+                    }
                 )
             }
 
@@ -477,9 +471,9 @@ async def _handle_chat_stream(
                 lang=body.lang,
                 user=user_label,
             ).inc()
-            CHAT_DURATION_SECONDS.labels(
-                model=model_used or UNKNOWN_MODEL, status="error"
-            ).observe(time.monotonic() - started)
+            CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="error").observe(
+                time.monotonic() - started
+            )
             yield {"data": sse_payload({"type": "error", "message": "all_providers_failed"})}
             return
         except Exception as exc:  # noqa: BLE001
@@ -490,9 +484,9 @@ async def _handle_chat_stream(
                 lang=body.lang,
                 user=user_label,
             ).inc()
-            CHAT_DURATION_SECONDS.labels(
-                model=model_used or UNKNOWN_MODEL, status="error"
-            ).observe(time.monotonic() - started)
+            CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="error").observe(
+                time.monotonic() - started
+            )
             yield {"data": sse_payload({"type": "error", "message": "stream_failed"})}
             return
 
@@ -504,9 +498,9 @@ async def _handle_chat_stream(
             lang=body.lang,
             user=user_label,
         ).inc()
-        CHAT_DURATION_SECONDS.labels(
-            model=model_used or UNKNOWN_MODEL, status="ok"
-        ).observe(elapsed)
+        CHAT_DURATION_SECONDS.labels(model=model_used or UNKNOWN_MODEL, status="ok").observe(
+            elapsed
+        )
         log.info(
             "chat_completed",
             stage="answer",

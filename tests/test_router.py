@@ -45,10 +45,7 @@ class TestExtractJsonObject:
         # otherwise a perfectly valid object is discarded and we waste a
         # failover round-trip (the whole point of salvage is to avoid that).
         text = 'Resposta: {"paths": ["a.md"], "note": "usa {chaves} aqui"} fim'
-        assert (
-            _extract_json_object(text)
-            == '{"paths": ["a.md"], "note": "usa {chaves} aqui"}'
-        )
+        assert _extract_json_object(text) == '{"paths": ["a.md"], "note": "usa {chaves} aqui"}'
 
     def test_escaped_quote_inside_string(self) -> None:
         text = r'{"paths": [], "q": "ele disse \"oi\" e } foi"}'
@@ -85,9 +82,7 @@ class TestParseRouterJson:
 
 
 @pytest.mark.asyncio
-async def test_returns_validated_paths(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_returns_validated_paths(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     mock_llm.router_response = '{"paths": ["entities/wiley.md", "skills/backend.md"]}'
     paths = await pick_paths(
         question="qual a stack do leonardo?",
@@ -139,9 +134,7 @@ async def test_drops_paths_unknown_to_loader(
     settings: Settings, loader: WikiLoader, mock_llm
 ) -> None:
     # only entities/wiley.md exists in the fixture; the other two are bogus
-    mock_llm.router_response = (
-        '{"paths": ["entities/wiley.md", "ghost/page.md", "../escape.md"]}'
-    )
+    mock_llm.router_response = '{"paths": ["entities/wiley.md", "ghost/page.md", "../escape.md"]}'
     paths = await pick_paths(
         question="me fala sobre wiley",
         history=[ChatMessage(role="user", content="me fala sobre wiley")],
@@ -161,9 +154,9 @@ async def test_invalid_paths_outcome_when_all_paths_bogus(
     from prometheus_client import REGISTRY
 
     def value_for(outcome: str) -> float:
-        return REGISTRY.get_sample_value(
-            "chat_api_router_outcome_total", {"outcome": outcome}
-        ) or 0.0
+        return (
+            REGISTRY.get_sample_value("chat_api_router_outcome_total", {"outcome": outcome}) or 0.0
+        )
 
     before = value_for("invalid_paths")
     mock_llm.router_response = '{"paths": ["ghost/x.md", "ghost/y.md"]}'
@@ -180,9 +173,7 @@ async def test_invalid_paths_outcome_when_all_paths_bogus(
 
 
 @pytest.mark.asyncio
-async def test_caps_at_max_paths(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_caps_at_max_paths(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     # Repeats are deduped first; pad with valid paths up to the cap.
     real = ["entities/wiley.md", "skills/backend.md"]
     # request 8 paths (some duplicates) — only valid + unique survive,
@@ -202,9 +193,7 @@ async def test_caps_at_max_paths(
 
 
 @pytest.mark.asyncio
-async def test_provider_failover(
-    settings: Settings, loader: WikiLoader, mock_llm
-) -> None:
+async def test_provider_failover(settings: Settings, loader: WikiLoader, mock_llm) -> None:
     # primary fails, secondary returns valid JSON
     mock_llm.behaviour["mock/primary"] = "raise_open"
     mock_llm.router_response = '{"paths": ["skills/backend.md"]}'
@@ -229,9 +218,7 @@ async def test_falls_back_when_primary_returns_non_json(
     """Reproduces the prod bug: Gemini answered 'Here is the JSON requested'
     with no actual JSON. We must try the next provider instead of refusing."""
     mock_llm.router_response_by_model["mock/primary"] = "Here is the JSON requested"
-    mock_llm.router_response_by_model["mock/secondary"] = (
-        '{"paths": ["entities/wiley.md"]}'
-    )
+    mock_llm.router_response_by_model["mock/secondary"] = '{"paths": ["entities/wiley.md"]}'
     paths = await pick_paths(
         question="me fala sobre wiley",
         history=[ChatMessage(role="user", content="me fala sobre wiley")],
@@ -262,9 +249,7 @@ async def test_salvages_json_from_preamble_without_failover(
     for resp in salvageable:
         mock_llm.reset()
         mock_llm.router_response_by_model["mock/primary"] = resp
-        mock_llm.router_response_by_model["mock/secondary"] = (
-            '{"paths": ["skills/ai.md"]}'
-        )
+        mock_llm.router_response_by_model["mock/secondary"] = '{"paths": ["skills/ai.md"]}'
         paths = await pick_paths(
             question="me fala sobre wiley",
             history=[ChatMessage(role="user", content="me fala sobre wiley")],
@@ -289,9 +274,7 @@ async def test_falls_back_when_primary_returns_non_object_json(
     for bogus in ('"null"', "null", "[]", "42", '"just a string"'):
         mock_llm.reset()
         mock_llm.router_response_by_model["mock/primary"] = bogus
-        mock_llm.router_response_by_model["mock/secondary"] = (
-            '{"paths": ["entities/wiley.md"]}'
-        )
+        mock_llm.router_response_by_model["mock/secondary"] = '{"paths": ["entities/wiley.md"]}'
         paths = await pick_paths(
             question=f"qualquer coisa ({bogus})",
             history=[ChatMessage(role="user", content="qualquer coisa")],
@@ -316,17 +299,15 @@ async def test_parse_error_outcome_only_when_all_providers_fail_validation(
     from prometheus_client import REGISTRY
 
     def value_for(outcome: str) -> float:
-        return REGISTRY.get_sample_value(
-            "chat_api_router_outcome_total", {"outcome": outcome}
-        ) or 0.0
+        return (
+            REGISTRY.get_sample_value("chat_api_router_outcome_total", {"outcome": outcome}) or 0.0
+        )
 
     parse_before = value_for("parse_error")
     ok_before = value_for("ok")
 
     mock_llm.router_response_by_model["mock/primary"] = "garbage"
-    mock_llm.router_response_by_model["mock/secondary"] = (
-        '{"paths": ["skills/backend.md"]}'
-    )
+    mock_llm.router_response_by_model["mock/secondary"] = '{"paths": ["skills/backend.md"]}'
     paths = await pick_paths(
         question="skills do leonardo",
         history=[ChatMessage(role="user", content="skills do leonardo")],
