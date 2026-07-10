@@ -1,0 +1,10 @@
+.git
+tests
+wiki-fixture
+.env*
+__pycache__
+.venv
+k8s
+data
+.github
+.claude

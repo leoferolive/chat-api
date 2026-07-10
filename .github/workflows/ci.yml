@@ -15,15 +15,20 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           version: "0.5.x"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
         run: uv python install 3.12
 
       - name: Sync dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --locked
 
       - name: Lint
         run: uv run ruff check app tests
+
+      - name: Format check
+        run: uv run ruff format --check app tests
 
       - name: Test
         run: uv run pytest -q
