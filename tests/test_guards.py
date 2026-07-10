@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from http.cookies import SimpleCookie
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import Response
 
 from app.config import Settings
 from app.db import Database
 from app.guards import (
+    SESSION_COOKIE,
     CostGateExceeded,
     cost_gate_check,
     issue_session_token,
+    set_session_cookie,
     verify_session_token,
     verify_turnstile,
 )
@@ -116,3 +120,43 @@ async def test_cost_gate_blocks_when_over_limit(tmp_path: Path) -> None:
             await cost_gate_check(db, limit=3)
     finally:
         await db.close()
+
+
+def _parsed_cookie(response: Response) -> SimpleCookie:
+    raw = response.headers.get("set-cookie")
+    assert raw is not None
+    cookie: SimpleCookie = SimpleCookie()
+    cookie.load(raw)
+    return cookie
+
+
+def test_set_session_cookie_issues_a_verifiable_token() -> None:
+    s = make_settings(env="dev")
+    response = Response()
+    set_session_cookie(response, "sid-1", s)
+
+    cookie = _parsed_cookie(response)
+    morsel = cookie[SESSION_COOKIE]
+    assert verify_session_token(morsel.value, s) == "sid-1"
+
+
+def test_set_session_cookie_attributes_match_settings() -> None:
+    s = make_settings(env="dev")
+    response = Response()
+    set_session_cookie(response, "sid-1", s)
+
+    morsel = _parsed_cookie(response)[SESSION_COOKIE]
+    assert morsel["httponly"] is True
+    assert morsel["samesite"] == "lax"
+    assert morsel["max-age"] == str(s.session_ttl_seconds)
+    # secure is only forced when settings.env == "prod"
+    assert not morsel["secure"]
+
+
+def test_set_session_cookie_is_secure_in_prod() -> None:
+    s = make_settings(env="prod")
+    response = Response()
+    set_session_cookie(response, "sid-1", s)
+
+    morsel = _parsed_cookie(response)[SESSION_COOKIE]
+    assert morsel["secure"] is True

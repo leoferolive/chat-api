@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 from jose import JWTError, jwt
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -105,6 +105,24 @@ def verify_session_token(token: str, settings: Settings) -> str | None:
     except JWTError:
         return None
     return payload.get("sid")
+
+
+def set_session_cookie(response: Response, session_id: str, settings: Settings) -> None:
+    """Issue/refresh the ``chat_session`` cookie so later messages skip Turnstile.
+
+    Shared by both the refusal path and the success path in ``main.py`` —
+    they must stay byte-for-byte identical (httponly/samesite/secure/max_age),
+    so this is the single place that sets them.
+    """
+    token = issue_session_token(session_id, settings)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.env == "prod",
+        max_age=settings.session_ttl_seconds,
+    )
 
 
 def require_first_message_or_session(
