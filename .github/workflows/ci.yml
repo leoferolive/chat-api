@@ -14,7 +14,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          version: "0.5.x"
+          # Pinned to the same major.minor as the Dockerfile (uv 0.10+,
+          # required by uv.lock revision = 3) so `--locked` here exercises
+          # the same lockfile-validation behavior as the image build.
+          version: "0.10.x"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
