@@ -30,6 +30,8 @@ spec:
         - name: db
           persistentVolumeClaim:
             claimName: chat-api-db
+        - name: tmp
+          emptyDir: {}
       initContainers:
         - name: wiki-prep
           image: busybox:1.36
@@ -113,12 +115,24 @@ spec:
                 name: chat-api-config
             - secretRef:
                 name: chat-api-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           volumeMounts:
             - name: wiki
               mountPath: /wiki
               readOnly: true
             - name: db
               mountPath: /data
+            # readOnlyRootFilesystem=true: uvicorn/litellm/tiktoken and
+            # Python's tempfile module all default to writing under /tmp
+            # (e.g. tiktoken's on-disk BPE cache). Without a writable /tmp
+            # the first request that needs it would crash the container.
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 100m

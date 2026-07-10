@@ -188,6 +188,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-Id"] = rid
         return response
 
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        # Baseline hardening headers on every response, including SSE
+        # streams — headers are set on the Response object returned by
+        # call_next() before the body starts streaming, so this applies
+        # uniformly regardless of content type.
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"status": "ok"}
