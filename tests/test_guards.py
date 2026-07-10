@@ -72,7 +72,16 @@ def test_session_token_round_trip() -> None:
 def test_session_token_rejects_tampered() -> None:
     s = make_settings()
     tok = issue_session_token("sid-1", s)
-    bad = tok[:-2] + ("aa" if tok[-2:] != "aa" else "bb")
+    header, payload, signature = tok.split(".")
+    # Flip a char in the middle of the payload so the HMAC signature no
+    # longer matches. Flipping the signature tail is flaky: 2 base64url
+    # chars encode only ~10-12 bits, so a fixed literal replacement has a
+    # real chance of landing on the original signature's bits and
+    # producing a "tampered" token that still verifies successfully.
+    mid = len(payload) // 2
+    flipped_char = "A" if payload[mid] != "A" else "B"
+    tampered_payload = payload[:mid] + flipped_char + payload[mid + 1 :]
+    bad = ".".join([header, tampered_payload, signature])
     assert verify_session_token(bad, s) is None
 
 
