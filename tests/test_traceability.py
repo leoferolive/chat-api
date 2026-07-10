@@ -47,7 +47,7 @@ async def test_security_headers_present_on_plain_response(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_security_headers_present_on_sse_stream(client, mock_llm) -> None:
+async def test_security_headers_present_on_sse_stream(client) -> None:
     body = {
         "sessionId": "33333333-3333-4333-8333-333333333333",
         "messages": [{"role": "user", "content": "Como foi o trabalho do Leonardo na Wiley?"}],

@@ -27,3 +27,12 @@ data:
   LLM_PROVIDERS: "openrouter/google/gemini-2.5-flash-lite,openrouter/deepseek/deepseek-v4-flash,gemini/gemini-2.5-flash"
   ZAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4/"
   WIKI_POLL_SECONDS: "60"
+  # readOnlyRootFilesystem=true: only /tmp is writable. Several litellm
+  # transitive deps default to caching under $HOME (tiktoken's BPE cache,
+  # HF/XDG cache dirs) rather than the tempfile module's /tmp default.
+  # Pin them explicitly so we don't depend on each lib's default and risk
+  # a first-request crash if one of them writes to the read-only home dir.
+  HOME: "/tmp"
+  TIKTOKEN_CACHE_DIR: "/tmp/tiktoken-cache"
+  HF_HOME: "/tmp/hf-cache"
+  XDG_CACHE_HOME: "/tmp/xdg-cache"
