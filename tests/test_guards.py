@@ -84,6 +84,15 @@ def test_session_token_rejects_tampered() -> None:
     bad = ".".join([header, tampered_payload, signature])
     assert verify_session_token(bad, s) is None
 
+    # Also cover the complementary case: intact payload, tampered signature.
+    # Flip a char in the middle of the signature (not the tail, which is
+    # where the flakiness described above lives) for a deterministic mismatch.
+    sig_mid = len(signature) // 2
+    flipped_sig_char = "A" if signature[sig_mid] != "A" else "B"
+    tampered_signature = signature[:sig_mid] + flipped_sig_char + signature[sig_mid + 1 :]
+    bad_signature = ".".join([header, payload, tampered_signature])
+    assert verify_session_token(bad_signature, s) is None
+
 
 @pytest.mark.asyncio
 async def test_cost_gate_passes_when_under_limit(tmp_path: Path) -> None:
