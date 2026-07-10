@@ -157,6 +157,122 @@ async def test_chat_stream_cost_gate(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_cost_gate_concurrent_never_exceeds_limit(client, mock_llm) -> None:
+    """End-to-end regression test for the daily cost-gate TOCTOU: firing many
+    concurrent /chat/stream requests (distinct sessions/first messages, so
+    only the daily gate is in play) against a small daily_llm_call_limit
+    must never let more than `limit` of them through."""
+    settings = client.app.state.settings  # type: ignore[attr-defined]
+    settings.daily_llm_call_limit = 3
+    n_requests = 10
+
+    async def attempt(i: int):
+        body = {
+            "sessionId": f"{i:08x}-0000-4000-8000-000000000000",
+            "messages": [{"role": "user", "content": f"hi {i}"}],
+            "lang": "pt",
+        }
+        return await client.post("/chat/stream", json=body)
+
+    responses = await asyncio.gather(*(attempt(i) for i in range(n_requests)))
+    ok = sum(1 for r in responses if r.status_code == 200)
+    gated = sum(1 for r in responses if r.status_code == 503)
+    assert ok == 3
+    assert ok + gated == n_requests
+
+    db = client.app.state.db  # type: ignore[attr-defined]
+    assert (await db.count_calls_today()) == 3
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_session_cap_concurrent_never_exceeds_limit(client, mock_llm) -> None:
+    """End-to-end regression test for the per-session TOCTOU: concurrent
+    requests carrying the same sessionId (as if a client double-fired a
+    submit) must never let through more than messages_per_session_limit."""
+    settings = client.app.state.settings  # type: ignore[attr-defined]
+    settings.messages_per_session_limit = 3
+    sid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    n_requests = 10
+
+    async def attempt(i: int):
+        body = {
+            "sessionId": sid,
+            "messages": [{"role": "user", "content": f"hi {i}"}],
+            "lang": "pt",
+        }
+        return await client.post("/chat/stream", json=body)
+
+    responses = await asyncio.gather(*(attempt(i) for i in range(n_requests)))
+    ok = sum(1 for r in responses if r.status_code == 200)
+    limited = sum(1 for r in responses if r.status_code == 429)
+    assert ok == 3
+    assert ok + limited == n_requests
+
+    db = client.app.state.db  # type: ignore[attr-defined]
+    assert (await db.count_user_messages_in_session(sid)) == 3
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_ip_limit_rolls_back_session_reservation(client) -> None:
+    """A request that passes the per-session gate but is then blocked by the
+    per-IP gate must not leave an orphan user message behind — same
+    externally-observable state as before this fix (nothing persisted for a
+    fully-rejected request)."""
+    db = client.app.state.db  # type: ignore[attr-defined]
+    settings = client.app.state.settings  # type: ignore[attr-defined]
+
+    # A first request from this test client establishes the ip_hash used
+    # for its (fake) remote address.
+    warm_sid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    warm_resp = await client.post(
+        "/chat/stream",
+        json={
+            "sessionId": warm_sid,
+            "messages": [{"role": "user", "content": "oi"}],
+            "lang": "pt",
+        },
+    )
+    assert warm_resp.status_code == 200
+
+    ip_hash = None
+    for _ in range(20):
+        await asyncio.sleep(0.05)
+        async with db._conn.execute(  # type: ignore[attr-defined]
+            "SELECT ip_hash FROM sessions WHERE id = ?", (warm_sid,)
+        ) as cur:
+            row = await cur.fetchone()
+        if row and row[0]:
+            ip_hash = row[0]
+            break
+    assert ip_hash
+
+    # Saturate the per-IP ceiling with fake served assistant turns.
+    for i in range(settings.daily_calls_per_ip_limit):
+        seed_sid = f"seed-session-{i}"
+        await db.upsert_session(seed_sid, ip_hash, "pt")
+        await db.save_turn(session_id=seed_sid, role="assistant", content="x")
+
+    sid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    resp = await client.post(
+        "/chat/stream",
+        json={
+            "sessionId": sid,
+            "messages": [{"role": "user", "content": "novo"}],
+            "lang": "pt",
+        },
+    )
+    assert resp.status_code == 429
+    events = parse_sse_events(resp.text)
+    assert any(e.get("message") == "ip_daily_limit" for e in events)
+
+    async with db._conn.execute(  # type: ignore[attr-defined]
+        "SELECT COUNT(*) FROM messages WHERE session_id = ?", (sid,)
+    ) as cur:
+        row = await cur.fetchone()
+    assert row[0] == 0
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_persists_messages(client) -> None:
     db = client.app.state.db  # type: ignore[attr-defined]
     body = {

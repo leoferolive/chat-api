@@ -155,8 +155,26 @@ class CostGateExceeded(RuntimeError):
 
 
 async def cost_gate_check(db: Any, limit: int) -> int:
-    """Return current count if under limit, else raise CostGateExceeded."""
-    count = await db.count_calls_today()
-    if count >= limit:
-        raise CostGateExceeded(f"daily LLM call limit reached: {count}/{limit}")
-    return count
+    """Atomically count this call against today's limit; raise if it tips
+    the daily ceiling.
+
+    This used to be a plain ``SELECT`` of today's count, with the actual
+    increment happening much later in the request (after the per-session
+    and per-IP checks, plus fire-and-forget task creation). Concurrent
+    requests could all read "under the limit" before any of them
+    incremented, blowing well past ``daily_llm_call_limit`` in a burst.
+
+    Now the check *is* the increment (``Database.increment_calls_today``,
+    an atomic ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING``): every
+    caller gets a unique, strictly increasing count with no gap another
+    caller could race through. If that count overshoots the limit we
+    decrement back immediately — the caller is rejected, so it must not
+    count towards the ceiling, same as before. The returned value (and the
+    exception message) report the count *before* this call, matching the
+    pre-existing semantics/messages callers and tests depend on.
+    """
+    count = await db.increment_calls_today()
+    if count > limit:
+        await db.decrement_calls_today()
+        raise CostGateExceeded(f"daily LLM call limit reached: {count - 1}/{limit}")
+    return count - 1

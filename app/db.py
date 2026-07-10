@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS judge_scores (
 
 CREATE INDEX IF NOT EXISTS idx_judge_scores_created_at
     ON judge_scores(created_at);
+
+-- count_user_messages_in_session filters by (session_id, role);
+-- count_calls_today_by_ip joins sessions->messages filtering role+created_at;
+-- fetch_unscored_assistant_turns correlates a subquery on
+-- (session_id, role, created_at). Without this index each of those falls
+-- back to a full scan of messages as the table grows.
+CREATE INDEX IF NOT EXISTS idx_messages_session_role
+    ON messages(session_id, role, created_at);
 """
 
 
@@ -193,22 +201,104 @@ class Database:
         return int(row[0]) if row else 0
 
     async def increment_calls_today(self) -> int:
-        """Atomically bump today's counter and return the new value."""
+        """Atomically bump today's counter and return the new value.
+
+        Uses ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING`` so the
+        write and the read-back happen as a single SQLite statement — no
+        gap between "bump the counter" and "find out what it became" for
+        another concurrent increment to land in (SQLite/aiosqlite >= 3.35
+        support ``RETURNING``). This is the primitive the cost gate uses to
+        make "check the limit" and "count this call" one atomic operation
+        instead of two separated by several ``await``s (see
+        ``guards.cost_gate_check``).
+        """
         assert self._conn is not None
         day = _today_key()
-        await self._conn.execute(
+        async with self._conn.execute(
             """
             INSERT INTO daily_calls(day, count) VALUES(?, 1)
             ON CONFLICT(day) DO UPDATE SET count = count + 1
+            RETURNING count
             """,
             (day,),
-        )
-        await self._conn.commit()
-        async with self._conn.execute("SELECT count FROM daily_calls WHERE day = ?", (day,)) as cur:
+        ) as cur:
             row = await cur.fetchone()
+        await self._conn.commit()
         count = int(row[0]) if row else 0
         DAILY_CALLS.set(count)
         return count
+
+    async def decrement_calls_today(self) -> int:
+        """Undo a previous ``increment_calls_today()`` call.
+
+        Used when a request already passed the cost gate but is then
+        rejected by a *later* gate (per-session / per-IP) — the daily
+        counter must keep reflecting only requests that actually reached
+        the LLM router, exactly like before this counter became atomic.
+        Floors at 0 defensively; returns the new value.
+        """
+        assert self._conn is not None
+        day = _today_key()
+        async with self._conn.execute(
+            """
+            UPDATE daily_calls SET count = MAX(count - 1, 0)
+            WHERE day = ?
+            RETURNING count
+            """,
+            (day,),
+        ) as cur:
+            row = await cur.fetchone()
+        await self._conn.commit()
+        count = int(row[0]) if row else 0
+        DAILY_CALLS.set(count)
+        return count
+
+    async def try_reserve_session_message(
+        self, session_id: str, content: str, limit: int
+    ) -> int | None:
+        """Atomically insert a user turn IFF the session is still under
+        ``limit`` stored user messages; returns the new row id, or
+        ``None`` if the session was already at/over the cap (nothing is
+        written in that case).
+
+        Folding the "how many so far" count and the insert into one
+        conditional statement (``INSERT ... SELECT ... WHERE (SELECT
+        COUNT...) < limit``) closes the classic TOCTOU: a plain
+        ``SELECT COUNT(*)`` followed — several ``await``s later — by an
+        unconditional insert lets concurrent requests for the same
+        sessionId all observe "under the cap" and all get inserted,
+        blowing past ``messages_per_session_limit`` in a burst. A single
+        statement is atomic with respect to other statements on this
+        connection, so only ever exactly ``limit`` rows can win the race.
+
+        Column values mirror ``save_turn(role="user", content=...)``'s
+        defaults (model=NULL, prompt/completion tokens=0, latency_ms=0,
+        cost_usd=0) so this is a drop-in replacement for that call.
+        """
+        assert self._conn is not None
+        async with self._conn.execute(
+            """
+            INSERT INTO messages
+                (session_id, role, content, model,
+                 prompt_tokens, completion_tokens, latency_ms, cost_usd, created_at)
+            SELECT ?, 'user', ?, NULL, 0, 0, 0, 0, ?
+            WHERE (
+                SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'user'
+            ) < ?
+            RETURNING id
+            """,
+            (session_id, content, _now_ts(), session_id, limit),
+        ) as cur:
+            row = await cur.fetchone()
+        await self._conn.commit()
+        return int(row[0]) if row else None
+
+    async def delete_message(self, message_id: int) -> None:
+        """Remove a single message row (rollback for a reservation that a
+        later gate ended up rejecting)."""
+        assert self._conn is not None
+        await self._conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        await self._conn.commit()
 
     async def count_user_messages_in_session(self, session_id: str) -> int:
         """Count how many user-role messages we've stored for a sessionId."""
