@@ -319,6 +319,7 @@ async def _handle_chat_stream(
     is_first_message = len(body.messages) == 1 and body.messages[0].role == "user"
     user_raw = sanitize_user_name(body.userName)
     user_label = cap_user_label(normalize_user_label(body.userName, salt=settings.user_hash_salt))
+    user_msg = body.messages[-1]
 
     # Turnstile / session enforcement BEFORE we touch the LLM.
     turnstile_ok = await verify_turnstile(body.turnstileToken, settings, remote_ip=ip)
@@ -330,7 +331,13 @@ async def _handle_chat_stream(
         settings=settings,
     )
 
-    # Cost gate
+    # Cost gate: the check *is* the atomic increment (see
+    # guards.cost_gate_check / Database.increment_calls_today) — this closes
+    # the TOCTOU where a plain SELECT here and the real increment, several
+    # awaits and gates later, let concurrent requests all pass before any of
+    # them counted. If a later gate (session/IP) rejects this same request we
+    # decrement below, so the daily counter still only reflects requests
+    # that reached the LLM router — unchanged from before.
     try:
         await cost_gate_check(db, settings.daily_llm_call_limit)
     except CostGateExceeded as exc:
@@ -352,9 +359,30 @@ async def _handle_chat_stream(
         resp.status_code = 503
         return resp
 
-    # Per-session soft cap (drawer rotates sessionId on reload).
-    session_count = await db.count_user_messages_in_session(body.sessionId)
-    if session_count >= settings.messages_per_session_limit:
+    # Per-session soft cap (drawer rotates sessionId on reload). The
+    # count-then-insert is folded into one atomic statement
+    # (`try_reserve_session_message`) so concurrent requests for the same
+    # sessionId can't all observe "under the cap" and all get through — the
+    # same TOCTOU as the cost gate, just against a per-session count instead
+    # of the global one. This also persists the user turn immediately,
+    # replacing the old fire-and-forget save for it.
+    reserved_message_id: int | None = None
+    if user_msg.role == "user":
+        reserved_message_id = await db.try_reserve_session_message(
+            body.sessionId, user_msg.content, settings.messages_per_session_limit
+        )
+        session_gate_ok = reserved_message_id is not None
+    else:
+        # Defensive branch: the last message in the payload isn't a user
+        # turn, so there is nothing to reserve/persist here — fall back to
+        # the plain read check, exactly like before this fix.
+        session_gate_ok = (
+            await db.count_user_messages_in_session(body.sessionId)
+        ) < settings.messages_per_session_limit
+
+    if not session_gate_ok:
+        await db.decrement_calls_today()
+        session_count = await db.count_user_messages_in_session(body.sessionId)
         log.warning(
             "session_limit_reached",
             session_id=body.sessionId,
@@ -369,10 +397,22 @@ async def _handle_chat_stream(
         resp.status_code = 429
         return resp
 
-    # Per-IP daily ceiling (real defence against rotating sessionIds).
+    # Per-IP daily ceiling (real defence against rotating sessionIds). This
+    # counts *served* assistant turns (see count_calls_today_by_ip), which
+    # only exist once a response actually gets persisted — reserving it
+    # atomically like the two gates above would mean rolling the
+    # reservation back across every exit path of the streaming response
+    # (success, provider failure, client disconnect, cancellation) just to
+    # keep excluding calls that never got served, which this SELECT-based
+    # check already does correctly. Left as a plain read; the window it
+    # still has is markedly narrower now that the two gates above close
+    # first and stop the bulk of a concurrent burst.
     ip_hashed_pre = hash_ip(ip, settings.ip_hash_salt)
     ip_calls_today = await db.count_calls_today_by_ip(ip_hashed_pre)
     if ip_calls_today >= settings.daily_calls_per_ip_limit:
+        if reserved_message_id is not None:
+            await db.delete_message(reserved_message_id)
+        await db.decrement_calls_today()
         log.warning(
             "ip_daily_limit_reached",
             ip_hash_prefix=ip_hashed_pre[:8],
@@ -387,7 +427,8 @@ async def _handle_chat_stream(
         resp.status_code = 429
         return resp
 
-    # Persist session row + user turn (fire-and-forget).
+    # Persist the session row (fire-and-forget). The user turn itself was
+    # already persisted above by try_reserve_session_message.
     ip_hashed = ip_hashed_pre
 
     async def _upsert_and_count() -> None:
@@ -396,23 +437,6 @@ async def _handle_chat_stream(
             SESSIONS_CREATED_TOTAL.labels(lang=body.lang).inc()
 
     _fire_and_forget(_upsert_and_count(), session_id=body.sessionId, turn="session_upsert")
-    user_msg = body.messages[-1]
-    if user_msg.role == "user":
-        _fire_and_forget(
-            db.save_turn(
-                session_id=body.sessionId,
-                role="user",
-                content=user_msg.content,
-            ),
-            session_id=body.sessionId,
-            turn="user",
-        )
-
-    # Bump the daily call counter once per turn, BEFORE the router runs.
-    # The router itself spends a provider call even when the answer LLM is
-    # short-circuited (refusal path). If we incremented only on the answer
-    # path, off-topic floods would never trip the daily cost gate.
-    await db.increment_calls_today()
 
     # LLM router: ask the model itself which wiki pages to ground on.
     selected_paths = await pick_paths(

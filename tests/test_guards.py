@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from http.cookies import SimpleCookie
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -118,6 +119,55 @@ async def test_cost_gate_blocks_when_over_limit(tmp_path: Path) -> None:
             await db.increment_calls_today()
         with pytest.raises(CostGateExceeded):
             await cost_gate_check(db, limit=3)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_cost_gate_check_does_not_inflate_counter_on_rejection(tmp_path: Path) -> None:
+    """A rejected call must not leave the daily counter higher than it was
+    before the attempt — cost_gate_check increments-then-decrements on
+    overshoot, it doesn't just tack on a rejected attempt forever."""
+    db = Database(tmp_path / "g3.sqlite")
+    await db.connect()
+    try:
+        for _ in range(3):
+            await db.increment_calls_today()
+        for _ in range(5):
+            with pytest.raises(CostGateExceeded):
+                await cost_gate_check(db, limit=3)
+        assert (await db.count_calls_today()) == 3
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_cost_gate_check_concurrent_never_exceeds_limit(tmp_path: Path) -> None:
+    """Regression test for the daily cost-gate TOCTOU: previously the gate
+    did a plain SELECT here and the real increment happened much later in
+    the request (after the session/IP checks), so N concurrent requests
+    could all observe "under the limit" before any of them counted,
+    blowing straight through daily_llm_call_limit. cost_gate_check now
+    folds the check into the atomic increment itself, so firing many
+    requests at once against a small limit must let through *exactly*
+    `limit` of them — never more."""
+    db = Database(tmp_path / "gate_race.sqlite")
+    await db.connect()
+    try:
+        limit = 5
+        n_requests = 25
+
+        async def attempt() -> bool:
+            try:
+                await cost_gate_check(db, limit=limit)
+            except CostGateExceeded:
+                return False
+            return True
+
+        results = await asyncio.gather(*(attempt() for _ in range(n_requests)))
+        accepted = sum(results)
+        assert accepted == limit
+        assert (await db.count_calls_today()) == limit
     finally:
         await db.close()
 

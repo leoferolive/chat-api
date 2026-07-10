@@ -198,15 +198,22 @@ async def test_db_persists_user_name_on_session(client, mock_llm) -> None:
     assert resp.status_code == 200
 
     db = client.app.state.db  # type: ignore[attr-defined]
-    # upsert_session is fire-and-forget; give the loop a tick.
+    # upsert_session is fire-and-forget; poll instead of a single fixed
+    # sleep — under load (e.g. the full suite running concurrency tests
+    # elsewhere) a one-shot sleep(0.05) is not always enough ticks for the
+    # background task to land, same pattern as test_chat_stream_persists_messages.
     import asyncio
 
-    await asyncio.sleep(0.05)
-    async with db._conn.execute(
-        "SELECT user_name FROM sessions WHERE id = ?",
-        ("22222222-2222-4222-8222-222222222222",),
-    ) as cur:
-        row = await cur.fetchone()
+    row = None
+    for _ in range(20):
+        await asyncio.sleep(0.05)
+        async with db._conn.execute(
+            "SELECT user_name FROM sessions WHERE id = ?",
+            ("22222222-2222-4222-8222-222222222222",),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is not None:
+            break
     assert row is not None
     assert row[0] == "Maria"
 
