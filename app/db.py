@@ -97,6 +97,14 @@ class Database:
         # /chat/stream stalls while the CronJob is committing scores.
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA busy_timeout=5000")
+        # foreign_keys is intentionally left off (SQLite default). main.py's
+        # session gate relies on this: it persists the user message via
+        # try_reserve_session_message() synchronously, before the owning
+        # sessions row is upserted (fire-and-forget, scheduled after). That
+        # ordering would violate messages.session_id's FK to sessions(id) if
+        # enforcement were ever turned on here. If you enable
+        # `PRAGMA foreign_keys=ON`, upsert_session must run — and be awaited
+        # — before try_reserve_session_message.
         await self._conn.executescript(_SCHEMA)
         await self._migrate_add_user_name()
         await self._migrate_add_cost_usd()
