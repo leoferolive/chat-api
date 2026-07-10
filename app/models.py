@@ -19,8 +19,14 @@ def _max_messages() -> int:
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
-    # max_length is read at validation time so tests can override via env
-    # without freezing the constant at module import.
+    # NOTE: `Field(...)` evaluates its arguments once, at class-definition
+    # time (module import) — Pydantic v2 does NOT re-call `_max_chars()` on
+    # every validation. The limit below is `get_settings().max_user_message_chars`
+    # frozen at the moment `app.models` is first imported; setting the env
+    # var afterwards has no effect on it. No test currently overrides this
+    # limit via env, so that's fine as-is — if per-test overrides are ever
+    # needed, switch to a `field_validator` that calls `get_settings()` at
+    # validation time instead.
     content: str = Field(..., min_length=1, max_length=_max_chars())
 
 

@@ -8,7 +8,7 @@ import litellm
 import structlog
 
 from ..db import Database
-from ..router import _parse_router_json
+from ..json_utils import parse_json_object
 from .prompts import CRITERIA, judge_prompt
 
 logger = structlog.get_logger(__name__)
@@ -49,11 +49,11 @@ async def _score_one(
         max_tokens=200,
         response_format={"type": "json_object"},
     )
-    # Re-use the router's defensive JSON extractor — judges suffer the same
+    # Re-use the shared defensive JSON extractor — judges suffer the same
     # "Here is the JSON requested: {...}" preamble problem in prod.
     text = resp.choices[0].message.content or ""
     try:
-        parsed = _parse_router_json(text)
+        parsed = parse_json_object(text)
     except (ValueError, json.JSONDecodeError) as exc:
         raise ValueError(f"judge JSON parse failed: {exc}") from exc
     return _coerce_score(parsed)
