@@ -40,6 +40,7 @@ invisible to the retriever.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import threading
@@ -91,18 +92,55 @@ class WikiLoader:
     # --- public API -----------------------------------------------------
 
     def load(self, force: bool = False) -> WikiSnapshot:
-        """Return the current snapshot, reloading if the index changed."""
+        """Return the current snapshot, reloading if the index changed.
+
+        Synchronous — does blocking disk I/O when a reload is due. Safe to
+        call from sync code or worker threads. Callers running on the
+        asyncio event loop (request handlers, the router) should use
+        :meth:`aload` instead so a reload can't stall other in-flight
+        requests.
+        """
         with self._lock:
             if force or self._needs_reload():
                 self._snapshot = self._build_snapshot()
                 self._last_check = time.time()
             return self._snapshot
 
+    async def aload(self, force: bool = False) -> WikiSnapshot:
+        """Async-safe variant of :meth:`load` for use from the event loop.
+
+        A reload walks the wiki directory tree and reads every page from
+        disk — synchronous I/O that, called directly from a coroutine,
+        would block the whole event loop (every other in-flight request)
+        for as long as the read takes.
+
+        Fast path: when no reload is due, ``_needs_reload()`` is a cheap
+        in-memory check, so we return the cached snapshot directly without
+        ever hopping to a worker thread. Only the (rare) actual reload is
+        offloaded via ``asyncio.to_thread``. ``load()``'s own
+        ``threading.Lock`` still guarantees only one thread performs the
+        disk read even if several coroutines detect the need to reload at
+        the same time — the rest simply block briefly on the lock (inside
+        their own worker thread) and then return the snapshot the winner
+        produced, so there's no risk of two concurrent reloads racing.
+        """
+        if not force and not self._needs_reload():
+            return self._snapshot
+        return await asyncio.to_thread(self.load, force)
+
     def all_pages(self) -> list[WikiPage]:
         return list(self.load().pages.values())
 
+    async def aall_pages(self) -> list[WikiPage]:
+        snapshot = await self.aload()
+        return list(snapshot.pages.values())
+
     def get_page(self, relative_path: str) -> WikiPage | None:
         return self.load().pages.get(relative_path)
+
+    async def aget_page(self, relative_path: str) -> WikiPage | None:
+        snapshot = await self.aload()
+        return snapshot.pages.get(relative_path)
 
     def index_text(self) -> str:
         """Return the raw content of ``index.md`` (empty if missing).
@@ -112,6 +150,11 @@ class WikiLoader:
         browse the catalog itself.
         """
         return self.load().index_text
+
+    async def aindex_text(self) -> str:
+        """Async-safe variant of :meth:`index_text` — see :meth:`aload`."""
+        snapshot = await self.aload()
+        return snapshot.index_text
 
     # --- internals ------------------------------------------------------
 

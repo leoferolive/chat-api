@@ -492,7 +492,11 @@ async def _handle_chat_stream(
             set_session_cookie(response, body.sessionId, settings)
         return response
 
-    pages = [p for p in (loader.get_page(path) for path in selected_paths) if p is not None]
+    # Async accessor so a due reload can't block the event loop; the router
+    # call above already warmed the snapshot cache, so this is normally a
+    # cheap in-memory read (see WikiLoader.aload).
+    wiki_snapshot = await loader.aload()
+    pages = [p for p in (wiki_snapshot.pages.get(path) for path in selected_paths) if p is not None]
     messages_for_llm = build_messages(body.lang, pages, body.messages)
     paths_hash = decision_hash(selected_paths)
 

@@ -9,16 +9,23 @@ short-circuit to a fixed refusal without invoking the answer LLM.
 from __future__ import annotations
 
 import hashlib
-import json
 
 import structlog
 
 from .config import Settings
 from .cost import provider_of
+from .json_utils import extract_json_object, parse_json_object
 from .llm_router import AllProvidersFailed, complete_once
 from .metrics import ROUTER_OUTCOME_TOTAL, ROUTER_SELECTED_PAGES
 from .models import ChatMessage
 from .wiki_loader import WikiLoader
+
+# Aliases kept for backward compatibility: these used to be private helpers
+# defined in this module. The implementation now lives in ``app.json_utils``
+# (shared with ``app.judge.runner``), but existing imports/tests reference
+# these names off ``app.router``.
+_extract_json_object = extract_json_object
+_parse_router_json = parse_json_object
 
 logger = structlog.get_logger(__name__)
 
@@ -37,70 +44,6 @@ def decision_hash(paths: list[str]) -> str:
         return "empty"
     joined = ",".join(sorted(paths))
     return hashlib.sha1(joined.encode()).hexdigest()[:8]
-
-
-def _extract_json_object(text: str) -> str:
-    """Pull the first balanced ``{...}`` block out of ``text``.
-
-    Models routinely wrap the JSON in a prose preamble ("Here is the JSON
-    requested: {...}") or a markdown fence (```json\n{...}\n```) despite the
-    system prompt — Gemini's actual prod behaviour. Salvaging it here means
-    the first provider's answer is used instead of burning a failover
-    round-trip (Gemini free-tier is only 5 req/min).
-
-    The scanner is string-aware: ``{``/``}`` inside a JSON string literal
-    (and backslash-escaped quotes) do not move the brace depth, so a valid
-    object whose values contain braces isn't discarded.
-
-    Raises ``ValueError`` if no brace-balanced object is found, so genuinely
-    JSON-free responses still fall through to the next provider.
-    """
-    depth = 0
-    start = -1
-    in_str = False
-    escaped = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1]
-    raise ValueError("no JSON object found in router response")
-
-
-def _parse_router_json(text: str) -> dict:
-    """Strict validator for router responses.
-
-    `json.loads` alone happily accepts `"null"`, `"[]"`, `"42"` — none of
-    which match our `{"paths": [...]}` contract. Treat anything that isn't
-    a JSON object at the top level as a parse failure so the failover loop
-    can try the next provider instead of silently refusing.
-
-    A clean ``{...}`` is parsed directly; anything else is salvaged via
-    `_extract_json_object` (prose preamble, markdown fence, trailing text)
-    before giving up and triggering failover.
-    """
-    try:
-        parsed = json.loads(text)
-    except (ValueError, TypeError):
-        parsed = json.loads(_extract_json_object(text))
-    if not isinstance(parsed, dict):
-        raise ValueError(f"router returned non-object JSON: {type(parsed).__name__}")
-    return parsed
 
 
 _SYSTEM_PT = """Você é um classificador. Seu único trabalho é ler o índice da wiki sobre o Leonardo Ferolla e decidir quais páginas são necessárias para responder à pergunta do usuário.
@@ -198,7 +141,12 @@ async def pick_paths(
     (no providers, parse error, transport error) collapses to ``[]`` so the
     user gets a clean refusal instead of an error.
     """
-    index_text = loader.index_text()
+    # Async accessor: a due reload does blocking disk I/O internally, offloaded
+    # via asyncio.to_thread so it doesn't stall the event loop (see
+    # WikiLoader.aload). This also warms the snapshot cache for the
+    # `loader.get_page(...)` lookups in `_validate_paths` below, so those stay
+    # cheap in-memory reads.
+    index_text = await loader.aindex_text()
     messages = [
         {"role": "system", "content": _system_prompt(lang, index_text)},
         *_recent_history(history, HISTORY_TURNS),
