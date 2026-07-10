@@ -139,6 +139,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # Drain any in-flight fire-and-forget tasks (e.g. save_turn /
+        # session upsert) before closing the DB connection they depend on —
+        # otherwise a task still in flight during shutdown can hit an
+        # already-closed connection. Exceptions are already logged by
+        # `_fire_and_forget`'s own done callback, so just wait them out.
+        if _background_tasks:
+            await asyncio.gather(*_background_tasks, return_exceptions=True)
         await db.close()
         log.info("shutdown")
 

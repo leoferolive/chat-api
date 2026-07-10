@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from structlog.testing import capture_logs
 
+from app.config import Settings
 from app.main import _background_tasks, _fire_and_forget
 
 
@@ -74,4 +75,38 @@ async def test_fire_and_forget_keeps_a_reference_until_done() -> None:
     release.set()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
+    assert task not in _background_tasks
+
+
+@pytest.mark.asyncio
+async def test_lifespan_drains_pending_background_tasks_before_db_close(
+    settings: Settings,
+) -> None:
+    """Shutdown must await in-flight fire-and-forget tasks before closing the DB.
+
+    Otherwise a task like save_turn()/_upsert_and_count() still in flight at
+    shutdown can hit an already-closed SQLite connection.
+    """
+    from app.main import create_app
+
+    app = create_app(settings)
+    lifespan_cm = app.router.lifespan_context(app)
+    await lifespan_cm.__aenter__()
+
+    completed_before_db_close = False
+
+    async def slow_write() -> None:
+        nonlocal completed_before_db_close
+        await asyncio.sleep(0.05)
+        # If the DB were already closed, a real write here would raise.
+        await app.state.db.count_calls_today()
+        completed_before_db_close = True
+
+    task = _fire_and_forget(slow_write(), session_id="sid-shutdown", turn="assistant")
+    assert not task.done()
+
+    await lifespan_cm.__aexit__(None, None, None)
+
+    assert task.done()
+    assert completed_before_db_close is True
     assert task not in _background_tasks
