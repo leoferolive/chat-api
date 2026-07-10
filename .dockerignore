@@ -1,0 +1,14 @@
+.git
+tests
+wiki-fixture
+.env*
+__pycache__
+.venv
+k8s
+data
+.github
+.claude
+.pytest_cache
+.ruff_cache
+.mypy_cache
+docker-compose.yml

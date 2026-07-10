@@ -34,9 +34,7 @@ async def test_sessions_created_counter_increments_only_on_new(client, mock_llm)
         ],
     }
     before_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
-    before = metric_value(
-        before_body, "chat_api_sessions_created_total", {"lang": "en"}
-    )
+    before = metric_value(before_body, "chat_api_sessions_created_total", {"lang": "en"})
     r1 = await client.post("/chat/stream", json=body1)
     assert r1.status_code == 200
     r2 = await client.post("/chat/stream", json=body2)
@@ -44,9 +42,7 @@ async def test_sessions_created_counter_increments_only_on_new(client, mock_llm)
     await asyncio.sleep(0.05)
 
     after_body = (await client.get("/metrics", headers={"host": "127.0.0.1"})).text
-    after = metric_value(
-        after_body, "chat_api_sessions_created_total", {"lang": "en"}
-    )
+    after = metric_value(after_body, "chat_api_sessions_created_total", {"lang": "en"})
     assert after - before == pytest.approx(1.0), (
         "exactly one new session must have been counted for this label"
     )
@@ -75,15 +71,12 @@ async def test_metrics_traffic_endpoint(client) -> None:
     )
     # Distinct IPs today (2, because two sessions share an IP)
     assert any(
-        line.startswith('chat_api_unique_ips{window="today"}')
-        and float(line.split()[-1]) == 2.0
+        line.startswith('chat_api_unique_ips{window="today"}') and float(line.split()[-1]) == 2.0
         for line in body.splitlines()
     )
 
 
 @pytest.mark.asyncio
 async def test_metrics_traffic_external_host_404(client) -> None:
-    resp = await client.get(
-        "/metrics-traffic", headers={"host": "chat-dev.leoferolive.com.br"}
-    )
+    resp = await client.get("/metrics-traffic", headers={"host": "chat-dev.leoferolive.com.br"})
     assert resp.status_code == 404

@@ -51,6 +51,7 @@ def _provider_kwargs(model: str) -> tuple[str, dict]:
 @dataclass
 class StreamResult:
     """Aggregated stream output (yielded incrementally to callers)."""
+
     model: str
     text: str = ""
     prompt_tokens: int = 0
@@ -160,17 +161,13 @@ async def stream_completion(
         if prompt_tokens:
             TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(prompt_tokens)
         if completion_tokens:
-            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(
-                completion_tokens
-            )
+            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(completion_tokens)
         cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
         if cost_usd:
-            COST_USD_TOTAL.labels(
-                model=model, provider=provider_of(model), stage=stage
-            ).inc(cost_usd)
-        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(
-            time.monotonic() - started
-        )
+            COST_USD_TOTAL.labels(model=model, provider=provider_of(model), stage=stage).inc(
+                cost_usd
+            )
+        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(time.monotonic() - started)
         yield {
             "type": "done",
             "model": model,
@@ -184,9 +181,7 @@ async def stream_completion(
         }
         return
 
-    raise AllProvidersFailed(
-        f"all providers failed: attempts={attempts} last_err={last_err!r}"
-    )
+    raise AllProvidersFailed(f"all providers failed: attempts={attempts} last_err={last_err!r}")
 
 
 async def complete_once(
@@ -260,13 +255,11 @@ async def complete_once(
                 PROVIDER_ATTEMPTS_TOTAL.labels(model=model, result="failure").inc()
                 # Token usage is still recorded — the provider did spend tokens.
                 if prompt_tokens:
-                    TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(
-                        prompt_tokens
-                    )
+                    TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(prompt_tokens)
                 if completion_tokens:
-                    TOKENS_TOTAL.labels(
-                        kind="completion", model=model, stage=stage
-                    ).inc(completion_tokens)
+                    TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(
+                        completion_tokens
+                    )
                 cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
                 if cost_usd:
                     COST_USD_TOTAL.labels(
@@ -280,17 +273,13 @@ async def complete_once(
         if prompt_tokens:
             TOKENS_TOTAL.labels(kind="prompt", model=model, stage=stage).inc(prompt_tokens)
         if completion_tokens:
-            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(
-                completion_tokens
-            )
+            TOKENS_TOTAL.labels(kind="completion", model=model, stage=stage).inc(completion_tokens)
         cost_usd = compute_cost(model, prompt_tokens, completion_tokens)
         if cost_usd:
-            COST_USD_TOTAL.labels(
-                model=model, provider=provider_of(model), stage=stage
-            ).inc(cost_usd)
-        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(
-            time.monotonic() - started
-        )
+            COST_USD_TOTAL.labels(model=model, provider=provider_of(model), stage=stage).inc(
+                cost_usd
+            )
+        STAGE_DURATION_SECONDS.labels(stage=stage, model=model).observe(time.monotonic() - started)
         result: dict = {
             "text": text,
             "model": model,

@@ -41,9 +41,9 @@ class _FakeLiteLLM:
         self.calls: list[dict] = []
         # criterion -> JSON body to return.
         self.responses: dict[str, str] = {
-            "relevance":    '{"score": 5, "reason": "spot on"}',
+            "relevance": '{"score": 5, "reason": "spot on"}',
             "groundedness": '{"score": 4, "reason": "minor speculation"}',
-            "safety":       '{"score": 5, "reason": "no harmful claims"}',
+            "safety": '{"score": 5, "reason": "no harmful claims"}',
         }
         # If set, any criterion in this set raises instead of responding.
         self.raise_for: set[str] = set()
@@ -135,7 +135,7 @@ async def test_evaluate_batch_only_retries_missing_criteria(seeded_db, fake_llm)
 @pytest.mark.asyncio
 async def test_score_out_of_range_is_clamped(seeded_db, fake_llm) -> None:
     fake_llm.responses["relevance"] = '{"score": 12, "reason": "huge"}'
-    fake_llm.responses["safety"]    = '{"score": -3, "reason": "neg"}'
+    fake_llm.responses["safety"] = '{"score": -3, "reason": "neg"}'
     await evaluate_batch(seeded_db, limit=10, judge_model="judge/test")
     rows = await seeded_db.judge_score_aggregates(since_ts=0)
     by_crit = {r["criterion"]: r["avg_score"] for r in rows}
@@ -186,7 +186,5 @@ async def test_metrics_judge_endpoint_aggregates(client) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_judge_endpoint_external_host_404(client) -> None:
-    resp = await client.get(
-        "/metrics-judge", headers={"host": "chat-dev.leoferolive.com.br"}
-    )
+    resp = await client.get("/metrics-judge", headers={"host": "chat-dev.leoferolive.com.br"})
     assert resp.status_code == 404
