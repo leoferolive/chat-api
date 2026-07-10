@@ -114,9 +114,16 @@ class WikiLoader:
         would block the whole event loop (every other in-flight request)
         for as long as the read takes.
 
-        Fast path: when no reload is due, ``_needs_reload()`` is a cheap
-        in-memory check, so we return the cached snapshot directly without
-        ever hopping to a worker thread. Only the (rare) actual reload is
+        Fast path: ``_needs_reload()`` itself always runs inline on the
+        event loop, never inside ``asyncio.to_thread``. Most of the time
+        that's a pure in-memory check (page cache populated and the poll
+        interval hasn't elapsed yet), so we return the cached snapshot
+        directly without ever hopping to a worker thread. The exception is
+        once per poll interval: once it elapses, ``_needs_reload()`` still
+        does a small synchronous read of ``index.md`` to hash it, inline on
+        the event loop — cheap in absolute terms (one small file), but not
+        offloaded like the rest of the I/O. Only the (rare) actual full
+        reload — walking the wiki tree and reading every page — is
         offloaded via ``asyncio.to_thread``. ``load()``'s own
         ``threading.Lock`` still guarantees only one thread performs the
         disk read even if several coroutines detect the need to reload at

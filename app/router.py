@@ -141,11 +141,13 @@ async def pick_paths(
     (no providers, parse error, transport error) collapses to ``[]`` so the
     user gets a clean refusal instead of an error.
     """
-    # Async accessor: a due reload does blocking disk I/O internally, offloaded
-    # via asyncio.to_thread so it doesn't stall the event loop (see
-    # WikiLoader.aload). This also warms the snapshot cache for the
-    # `loader.get_page(...)` lookups in `_validate_paths` below, so those stay
-    # cheap in-memory reads.
+    # Async accessor: a due full reload (walking the wiki tree and reading
+    # every page) is offloaded via asyncio.to_thread so it doesn't stall the
+    # event loop; the reload-needed check itself still does a small inline
+    # index.md read on the event loop once per poll interval (see
+    # WikiLoader.aload for the full breakdown). This also warms the snapshot
+    # cache for the `loader.get_page(...)` lookups in `_validate_paths`
+    # below, so those stay cheap in-memory reads for the rest of this call.
     index_text = await loader.aindex_text()
     messages = [
         {"role": "system", "content": _system_prompt(lang, index_text)},
