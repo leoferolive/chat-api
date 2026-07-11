@@ -116,6 +116,7 @@ spec:
             - secretRef:
                 name: chat-api-secrets
           securityContext:
+            runAsUser: 1000
             runAsNonRoot: true
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
