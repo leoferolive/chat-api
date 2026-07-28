@@ -21,6 +21,7 @@ deploy K3s no Raspberry Pi (mesmo cluster do site).
 | `uv run uvicorn app.main:app --reload` | dev local (porta 8000) |
 | `uv run pytest -q` | suite de testes |
 | `uv run ruff check app tests` | lint |
+| `uv run ruff format --check app tests` | formatting (roda no CI) |
 | `docker compose up --build` | smoke test do container |
 
 ## Layout
@@ -58,6 +59,96 @@ k8s/{prod,dev}/    manifests K3s
   completion_tokens).
 - Persistencia: SQLite em `DB_PATH` (volume PVC em K8s). IPs sempre
   hashed com `IP_HASH_SALT` antes de gravar.
+
+## Estilo de código
+
+Regras de estilo aplicáveis ao código Python/FastAPI deste repo. Regras de
+domínio (config, LiteLLM, guard order, logging, persistência) ficam em
+"Convencoes de codigo" acima — esta seção é sobre forma, não sobre negócio.
+
+- **Funções e módulos:** funções curtas (4-20 linhas); quebre se passar
+  disso. Um módulo, uma responsabilidade — os módulos de `app/` já são bem
+  segmentados (`wiki_loader.py`, `retriever.py`, `llm_router.py`, `guards.py`
+  etc.); mantenha esse padrão em vez de acrescentar lógica alheia a um
+  módulo existente.
+- **Tamanho de arquivo:** manter arquivos abaixo de 500 linhas.
+  `app/main.py` (624) e `app/db.py` (538) já ultrapassam o limite — isso é
+  débito conhecido, não retroativo: não é necessário quebrá-los agora, mas
+  qualquer PR que toque de forma significativa um dos dois deve considerar
+  extrair responsabilidades (ex.: separar rotas de `main.py`, separar
+  queries de `db.py`) em vez de só engordar o arquivo.
+- **Nomes:** específicos e únicos. Evitar `data`, `handler`, `manager`.
+  Prefira nomes que retornem poucos hits em `grep -r` no repo.
+- **Tipagem:** type hints explícitos sempre; sem `Dict`/`Any` soltos.
+  Use os modelos Pydantic já existentes (`ChatRequest`, `ChatChunk`,
+  `WikiPage` em `app/models.py`) como padrão — se um payload precisa de
+  forma própria, crie o modelo Pydantic correspondente em vez de passar
+  `dict` cru entre camadas.
+- **Sem duplicação; early return.** Extraia lógica repetida para função ou
+  módulo. Prefira `if not x: return` a `if x: ...` aninhado — máximo 2
+  níveis de indentação por função.
+- **Mensagens de exceção:** sempre incluir o valor recebido e o shape
+  esperado, por exemplo:
+
+  ```python
+  raise ValueError(
+      f"model string invalido: {model!r}; esperado formato "
+      f"'<provider>/<model>', ex. 'gemini/gemini-2.5-flash'"
+  )
+  ```
+
+## Comentários
+
+- Preservar comentários existentes em refactors — carregam intenção e
+  proveniência; não apagar sem necessidade.
+- Escrever o PORQUÊ, não o QUÊ (pule `# incrementa contador` acima de
+  `i += 1`).
+- Docstring em função pública: intenção + um exemplo de uso.
+- Referenciar issue/commit quando a linha existir por causa de um bug
+  específico ou limitação de upstream (ex. workaround do LiteLLM).
+
+## Testes (estilo)
+
+Comandos já documentados em "Sempre" e "Comandos" (`uv run pytest -q`,
+`uv run ruff check app tests`) — aqui só as regras de estilo:
+
+- Toda função nova ganha teste; todo bugfix ganha teste de regressão.
+- Mock de I/O externo (API, DB, filesystem) via classe fake nomeada, não
+  stub inline solto — siga o padrão já usado para o LiteLLM, monkey-patched
+  em `tests/conftest.py`.
+- Testes devem ser F.I.R.S.T.: fast, independent, repeatable,
+  self-validating, timely.
+
+## Dependências
+
+- Injeção de dependências é via `Depends()` do FastAPI — é o equivalente
+  idiomático a "injetar por construtor/parâmetro" neste projeto. Config via
+  `pydantic-settings` (`app/config.py`) é o padrão idiomático do framework
+  e é uma exceção aceita, não uma violação dessa regra.
+- Wrapper fino sobre lib de terceiros: `app/llm_router.py` já cumpre esse
+  papel para o LiteLLM — siga o mesmo padrão para qualquer outra
+  dependência externa relevante em vez de espalhar chamadas diretas à lib
+  pelo código.
+
+## Estrutura
+
+Layout já documentado na seção "Layout" acima e já segue a convenção
+FastAPI (models/config/routers separados) — mantenha essa separação ao
+adicionar código novo em vez de concentrar tudo em `main.py`.
+
+## Formatting
+
+- Formatador padrão: `ruff format` (config em `pyproject.toml`,
+  `[tool.ruff]`). Não discutir estilo além disso.
+- `uv run ruff format --check app tests` — roda no CI (`.github/workflows/
+  ci.yml`); rode antes de commit.
+- `uv run ruff format app tests` — aplica a formatação.
+
+## Logging (estilo)
+
+Ver "Convencoes de codigo" acima para a política completa (structlog JSON,
+sem PII). Texto plano só valeria para saída de CLI — não há nenhuma hoje
+neste projeto (é backend puro).
 
 ## Deploy architecture
 
