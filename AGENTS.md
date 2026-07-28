@@ -97,6 +97,12 @@ domínio (config, LiteLLM, guard order, logging, persistência) ficam em
   )
   ```
 
+  **Exceção:** para secrets (Turnstile, session JWT, API keys dos providers)
+  ou conteúdo de mensagem de chat, não incluir o valor recebido na exceção —
+  esses `str(exc)` acabam em log de produção (ex. `app/main.py`) e violam a
+  política de "nao logar conteudo de mensagens"/PII de "Convencoes de
+  codigo". Descreva o formato esperado sem ecoar o valor.
+
 ## Comentários
 
 - Preservar comentários existentes em refactors — carregam intenção e
@@ -147,8 +153,12 @@ adicionar código novo em vez de concentrar tudo em `main.py`.
 ## Logging (estilo)
 
 Ver "Convencoes de codigo" acima para a política completa (structlog JSON,
-sem PII). Texto plano só valeria para saída de CLI — não há nenhuma hoje
-neste projeto (é backend puro).
+sem PII). Existe uma CLI hoje: `app/judge/cli.py`, invocada pelos CronJobs
+`k8s/{prod,dev}/cronjob-judge.yaml` (`python -m app.judge.cli --once
+--limit N`). Ela já configura `structlog` JSON para logs operacionais — o
+`print(summary)` final, que imprime o resultado do batch para quem lê o log
+do Job manualmente, é o caso legítimo de "texto plano só para saída de CLI
+voltada a humano": não convertê-lo para JSON.
 
 ## Deploy architecture
 
