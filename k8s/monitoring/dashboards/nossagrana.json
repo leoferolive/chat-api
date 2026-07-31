@@ -1,0 +1,282 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Total de usuários cadastrados na plataforma (contagem de linhas da tabela `users` no Postgres). Métrica de crescimento da base de contas.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Usuários\" FROM users;",
+          "refId": "A"
+        }
+      ],
+      "title": "Usuários totais",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Total de famílias ativas (não soft-deleted, `deleted_at IS NULL`) cadastradas. Fonte: tabela `familias` no Postgres. Reflete os grupos financeiros realmente em uso.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Famílias\" FROM familias WHERE deleted_at IS NULL;",
+          "refId": "A"
+        }
+      ],
+      "title": "Famílias ativas",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Usuários ativos nos últimos 30 dias: contagem distinta de quem registrou ao menos uma transação no período (`usuario_registrou_id` em `transacoes`). Proxy de engajamento; verde indica >= 1 ativo.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "yellow", "value": null}, {"color": "green", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT usuario_registrou_id) AS \"Ativos 30d\" FROM transacoes WHERE criado_em >= now() - interval '30 days';",
+          "refId": "A"
+        }
+      ],
+      "title": "Usuários ativos (30d)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Quantidade de transações lançadas no mês de referência atual (fuso America/Sao_Paulo), contadas em `transacoes` por `mes_referencia`. Mede o volume de uso do mês corrente.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Transações no mês\" FROM transacoes WHERE mes_referencia = to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM');",
+          "refId": "A"
+        }
+      ],
+      "title": "Transações no mês (contagem)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Comparativo financeiro do mês de referência atual (R$): soma de receitas, soma de despesas e o Saldo = receitas − despesas. Saldo negativo indica que o mês gastou mais do que recebeu.",
+      "fieldConfig": {"defaults": {"unit": "currencyBRL", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 5,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "orientation": "horizontal"},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(valor) FILTER (WHERE tipo = 'receita'), 0) AS \"Receitas\", coalesce(sum(valor) FILTER (WHERE tipo = 'despesa'), 0) AS \"Despesas\", coalesce(sum(valor) FILTER (WHERE tipo = 'receita'), 0) - coalesce(sum(valor) FILTER (WHERE tipo = 'despesa'), 0) AS \"Saldo\" FROM transacoes WHERE mes_referencia = to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM');",
+          "refId": "A"
+        }
+      ],
+      "title": "Receitas vs Despesas vs Saldo (mês atual)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Top 10 categorias com maior gasto (R$) no mês de referência atual: soma de despesas agrupada por categoria (`transacoes` × `categorias`). Mostra para onde o dinheiro está indo no mês.",
+      "fieldConfig": {"defaults": {"unit": "currencyBRL", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "id": 6,
+      "options": {"legend": {"displayMode": "list", "placement": "right"}, "pieType": "donut", "tooltip": {"mode": "single"}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.nome AS metric, sum(t.valor) AS value FROM transacoes t JOIN categorias c ON c.id = t.categoria_id WHERE t.tipo = 'despesa' AND t.mes_referencia = to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') GROUP BY c.nome ORDER BY value DESC LIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Top categorias de despesa (mês atual)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Número de cofrinhos (metas de poupança) com `status = 'ativo'` na tabela `cofrinhos`. Indica quantos objetivos de economia estão atualmente em andamento.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 12},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Cofrinhos ativos\" FROM cofrinhos WHERE status = 'ativo';",
+          "refId": "A"
+        }
+      ],
+      "title": "Cofrinhos ativos",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+      "description": "Quantos orçamentos de categoria vigentes já ultrapassaram 100% do limite no mês atual (gasto acumulado > `valor_limite`). Verde = nenhum estourado; vermelho (>= 1) sinaliza famílias acima do orçamento.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 12},
+      "id": 8,
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "nossagrana-pg"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Orçamentos estourados\" FROM (SELECT o.id, o.valor_limite, coalesce(sum(t.valor), 0) AS gasto FROM orcamento_categoria o LEFT JOIN transacoes t ON t.categoria_id = o.categoria_id AND t.familia_id = o.familia_id AND t.tipo = 'despesa' AND t.mes_referencia = to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') WHERE o.vigencia_inicio <= to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') AND (o.vigencia_fim IS NULL OR o.vigencia_fim >= to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')) GROUP BY o.id, o.valor_limite) sub WHERE sub.gasto > sub.valor_limite;",
+          "refId": "A"
+        }
+      ],
+      "title": "Orçamentos estourados (>100% no mês)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Taxa de requisições HTTP (req/s) por rota e método, via `rate(http_request_duration_seconds_count[5m])` no Prometheus. Mostra o tráfego e quais endpoints recebem mais carga.",
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 9,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (route, method) (rate(http_request_duration_seconds_count{namespace=\"nossagrana\"}[5m]))",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Req/s por rota (operacional)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Latência p95 das requisições HTTP por rota, em segundos (`histogram_quantile(0.95, ...http_request_duration_seconds_bucket)`). Picos indicam endpoints lentos para 95% dos usuários.",
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 10,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{namespace=\"nossagrana\"}[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Latência p95 por rota (operacional)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Taxa de respostas com erro de servidor 5xx (req/s), via `rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])`. Acima de 0,1 req/s fica vermelho; qualquer valor sustentado indica falhas na API.",
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "id": 11,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum(rate(http_request_duration_seconds_count{namespace=\"nossagrana\",status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Taxa de erro 5xx (operacional)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Uso de CPU por pod do container `nossagrana-api`, em cores (`rate(container_cpu_usage_seconds_total[5m])`). 1 = um núcleo inteiro consumido; útil para dimensionar limites e detectar saturação.",
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "id": 12,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"nossagrana\",container=\"nossagrana-api\"}[5m]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU (cores) — nossagrana-api",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Memória em uso por pod do container `nossagrana-api` (`container_memory_working_set_bytes`), em bytes. Crescimento contínuo pode indicar vazamento; proximidade do limite causa OOMKill.",
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "id": 13,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"nossagrana\",container=\"nossagrana-api\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Memória — nossagrana-api",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Tempo de atividade de cada pod desde o último start (`time() - process_start_time_seconds`), em segundos. Uma queda brusca a zero indica reinício/restart do processo.",
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 32},
+      "id": 14,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "time() - process_start_time_seconds{namespace=\"nossagrana\"}",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Uptime — nossagrana-api",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["nossagrana"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "America/Sao_Paulo",
+  "title": "nossagrana",
+  "uid": "nossagrana",
+  "version": 3,
+  "weekStart": ""
+}

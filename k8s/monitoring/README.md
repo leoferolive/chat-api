@@ -128,6 +128,36 @@ kubectl label configmap chat-api-dashboard \
   -n monitoring grafana_dashboard=1 --overwrite
 ```
 
+## Dashboard nossagrana
+
+Dashboard de métricas do app **nossagrana** (UID `nossagrana`), com painéis
+de **negócio** (SQL via datasource Postgres read-only `nossagrana-pg`, banco
+`nossagrana_prod`) e **operacionais** (Prometheus). O sidecar do Grafana
+auto-detecta o ConfigMap via label `grafana_dashboard=1` (`searchNamespace: ALL`).
+
+```bash
+# Importar o dashboard nossagrana (sidecar auto-detecta via label)
+kubectl create configmap nossagrana-dashboard \
+  -n monitoring \
+  --from-file=nossagrana.json=k8s/monitoring/dashboards/nossagrana.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl label configmap nossagrana-dashboard \
+  -n monitoring grafana_dashboard=1 --overwrite
+
+# Aplicar ServiceMonitor + PrometheusRule (namespace nossagrana)
+kubectl apply -f k8s/monitoring/servicemonitors/nossagrana.yaml
+kubectl apply -f k8s/monitoring/prometheusrules/nossagrana.yaml
+```
+
+> **Datasource de negócio:** os painéis de negócio exigem o datasource Postgres
+> read-only `nossagrana` (usuário `grafana_ro`, uid `nossagrana-pg`, banco real
+> `nossagrana_prod`) provisionado na Fase 0 (`grafana.additionalDataSources` em
+> `values.yaml`). Sem ele, esses painéis mostram "No data".
+>
+> **Painéis operacionais:** dependem do `/metrics` exposto pelo app nossagrana
+> (deploy da app) e do scrape via ServiceMonitor. Ficam "No data" até a app ser
+> re-deployada com a instrumentação Prometheus.
+
 ## Verificação
 
 ```bash

@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nossagrana-api
+  namespace: nossagrana
+  labels:
+    app: nossagrana-api
+    # Required by kube-prometheus-stack's serviceMonitorSelector.
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: nossagrana-api
+  namespaceSelector:
+    matchNames:
+      - nossagrana
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
