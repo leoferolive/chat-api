@@ -71,10 +71,21 @@ ratchet_coverage_check() {
     echo "✓ Ratchet OK: line $current_line% >= $baseline_line% - $tolerance%; branch $current_branch% >= $baseline_branch% - $tolerance%"
 }
 
+run_tests_and_coverage() {
+    # Garante coverage.xml da execução atual: gera explicitamente a
+    # partir dos dados de cobertura desta rodada de pytest, em vez de
+    # depender implicitamente do --cov-report=xml em pyproject.toml
+    # (o ratchet exige o arquivo logo em seguida).
+    uv run pytest -q
+    local rc=$?
+    uv run coverage xml || return 1
+    return $rc
+}
+
 run_check "ruff lint"       uv run ruff check app tests
 run_check "ruff format"     uv run ruff format --check app tests
 run_check "pyright"         uv run pyright
-run_check "pytest+coverage" uv run pytest -q
+run_check "pytest+coverage" run_tests_and_coverage
 run_check "ratchet"         ratchet_coverage_check
 run_check "bandit"          uv run bandit -c pyproject.toml -r app -ll -ii
 run_check "pip-audit"       pip_audit_check
