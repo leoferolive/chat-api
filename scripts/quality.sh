@@ -82,32 +82,38 @@ run_tests_and_coverage() {
     return $rc
 }
 
-run_check "ruff lint"       uv run ruff check app tests
-run_check "ruff format"     uv run ruff format --check app tests
-run_check "pyright"         uv run pyright
-run_check "pytest+coverage" run_tests_and_coverage
-run_check "ratchet"         ratchet_coverage_check
-run_check "bandit"          uv run bandit -c pyproject.toml -r app -ll -ii
-run_check "pip-audit"       pip_audit_check
+# Guard: só executa o gate completo quando o script roda diretamente
+# (`bash scripts/quality.sh`). Permite que testes façam `source` deste
+# arquivo apenas para reutilizar funções como ratchet_coverage_check,
+# sem disparar ruff/pyright/pytest/bandit/pip-audit como efeito colateral.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    run_check "ruff lint"       uv run ruff check app tests
+    run_check "ruff format"     uv run ruff format --check app tests
+    run_check "pyright"         uv run pyright
+    run_check "pytest+coverage" run_tests_and_coverage
+    run_check "ratchet"         ratchet_coverage_check
+    run_check "bandit"          uv run bandit -c pyproject.toml -r app -ll -ii
+    run_check "pip-audit"       pip_audit_check
 
-echo
-echo "======================================"
-echo "         QUALITY GATE — chat-api"
-echo "======================================"
-printf "%-20s %s\n" "Dimensão" "Resultado"
-echo "--------------------------------------"
-for name in "ruff lint" "ruff format" "pyright" "pytest+coverage" "ratchet" "bandit" "pip-audit"; do
-    symbol="✓"
-    [[ "${RESULTS[$name]}" == "FAIL" ]] && symbol="✗"
-    printf "%-20s %s\n" "$name" "$symbol"
-done
-echo "--------------------------------------"
-if [[ -n "${RATCHET_LINE_CURRENT:-}" ]]; then
-    printf "%-20s line %s%% (baseline %s%%, tol %s%%)\n" \
-        "ratchet line"   "$RATCHET_LINE_CURRENT"   "$RATCHET_LINE_BASELINE"   "$RATCHET_TOLERANCE"
-    printf "%-20s branch %s%% (baseline %s%%, tol %s%%)\n" \
-        "ratchet branch" "$RATCHET_BRANCH_CURRENT" "$RATCHET_BRANCH_BASELINE" "$RATCHET_TOLERANCE"
+    echo
+    echo "======================================"
+    echo "         QUALITY GATE — chat-api"
+    echo "======================================"
+    printf "%-20s %s\n" "Dimensão" "Resultado"
+    echo "--------------------------------------"
+    for name in "ruff lint" "ruff format" "pyright" "pytest+coverage" "ratchet" "bandit" "pip-audit"; do
+        symbol="✓"
+        [[ "${RESULTS[$name]}" == "FAIL" ]] && symbol="✗"
+        printf "%-20s %s\n" "$name" "$symbol"
+    done
+    echo "--------------------------------------"
+    if [[ -n "${RATCHET_LINE_CURRENT:-}" ]]; then
+        printf "%-20s line %s%% (baseline %s%%, tol %s%%)\n" \
+            "ratchet line"   "$RATCHET_LINE_CURRENT"   "$RATCHET_LINE_BASELINE"   "$RATCHET_TOLERANCE"
+        printf "%-20s branch %s%% (baseline %s%%, tol %s%%)\n" \
+            "ratchet branch" "$RATCHET_BRANCH_CURRENT" "$RATCHET_BRANCH_BASELINE" "$RATCHET_TOLERANCE"
+    fi
+    echo "======================================"
+
+    exit $FAILED
 fi
-echo "======================================"
-
-exit $FAILED
