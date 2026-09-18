@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("shutdown")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901, PLR0915 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
     settings = settings or get_settings()
     app = FastAPI(title="chat-api", version="0.1.0", lifespan=lifespan)
 

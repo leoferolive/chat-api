@@ -22,9 +22,14 @@ DEFAULT_JUDGE_MODEL = "openrouter/google/gemini-2.5-flash-lite"
 
 def _coerce_score(parsed: dict) -> tuple[float, str]:
     raw_score = parsed.get("score")
+    # parsed comes straight from the judge's JSON; narrow the type before
+    # float() so a genuinely wrong shape (list/dict/None) is a ValueError
+    # from us, not a bare TypeError leaking litellm/json internals.
+    if not isinstance(raw_score, (int, float, str)):
+        raise ValueError(f"judge returned non-numeric score: {raw_score!r}")
     try:
         score = float(raw_score)
-    except (TypeError, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError(f"judge returned non-numeric score: {raw_score!r}") from exc
     if score < 0:
         score = 0.0
@@ -49,9 +54,14 @@ async def _score_one(
         max_tokens=200,
         response_format={"type": "json_object"},
     )
+    # acompletion() is typed to return ModelResponse | CustomStreamWrapper, but
+    # the latter only happens with stream=True, which we never pass here — the
+    # actual runtime/test contract is duck-typed (any object shaped like
+    # ModelResponse), so this narrows via pyright only, not an isinstance
+    # check that would reject legitimate look-alikes (e.g. test doubles).
     # Re-use the shared defensive JSON extractor — judges suffer the same
     # "Here is the JSON requested: {...}" preamble problem in prod.
-    text = resp.choices[0].message.content or ""
+    text = resp.choices[0].message.content or ""  # pyright: ignore[reportAttributeAccessIssue]  # LiteLLM stubs union; real/duck-typed response always has .choices here
     try:
         parsed = parse_json_object(text)
     except (ValueError, json.JSONDecodeError) as exc:

@@ -24,7 +24,12 @@ pip_audit_check() {
     local tmp rc
     tmp="$(mktemp -t pipaudit-XXXXXX.txt)"
     uv export --format requirements-txt --no-emit-project --no-hashes > "$tmp"
-    uv run pip-audit --strict --disable-pip --no-deps -r "$tmp"
+    uv run pip-audit --strict --disable-pip --no-deps -r "$tmp" \
+        --ignore-vuln PYSEC-2026-1325
+        # ^ ecdsa (transitivo via python-jose[cryptography]): sem fix version —
+        # timing attack (Minerva) em assinatura/verificação ECDSA, upstream não
+        # corrigiu. app/guards.py só usa jwt.encode/decode com HS256 (HMAC
+        # simétrico) — o backend ecdsa nunca é exercitado neste código.
     rc=$?
     rm -f "$tmp"
     return $rc

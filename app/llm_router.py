@@ -186,7 +186,7 @@ async def stream_completion(  # noqa: C901, PLR0915 — orchestrates provider fa
     raise AllProvidersFailed(f"all providers failed: attempts={attempts} last_err={last_err!r}")
 
 
-async def complete_once(
+async def complete_once(  # noqa: C901, PLR0915 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
     messages: list[dict],
     providers: list[str],
     *,

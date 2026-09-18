@@ -43,7 +43,8 @@ def decision_hash(paths: list[str]) -> str:
     if not paths:
         return "empty"
     joined = ",".join(sorted(paths))
-    return hashlib.sha1(joined.encode()).hexdigest()[:8]
+    # Non-cryptographic use — a cache/log fingerprint, not a security boundary.
+    return hashlib.sha1(joined.encode(), usedforsecurity=False).hexdigest()[:8]  # nosec B324
 
 
 _SYSTEM_PT = """Você é um classificador. Seu único trabalho é ler o índice da wiki sobre o Leonardo Ferolla e decidir quais páginas são necessárias para responder à pergunta do usuário.
