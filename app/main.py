@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("shutdown")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901, PLR0915 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
     settings = settings or get_settings()
     app = FastAPI(title="chat-api", version="0.1.0", lifespan=lifespan)
 
@@ -164,7 +164,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RATE_LIMIT_HITS_TOTAL.inc()
         return _rate_limit_exceeded_handler(request, exc)
 
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+    # slowapi handler signature is narrower than FastAPI's ExceptionHandler protocol.
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # pyright: ignore[reportArgumentType]  # slowapi handler signature
 
     app.add_middleware(
         CORSMiddleware,
@@ -317,7 +318,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-async def _handle_chat_stream(
+async def _handle_chat_stream(  # noqa: C901, PLR0915 — chat handler with auth, rate limits, cost gate, persistence; splitting fragments request lifecycle
     request: Request,
     body: ChatRequest,
     settings: Settings,

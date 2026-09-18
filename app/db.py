@@ -166,7 +166,7 @@ class Database:
         await self._conn.commit()
         return not existed
 
-    async def save_turn(
+    async def save_turn(  # noqa: PLR0913 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
         self,
         *,
         session_id: str,
@@ -333,8 +333,9 @@ class Database:
         if not criteria:
             return []
         placeholders = ",".join("?" for _ in criteria)
-        async with self._conn.execute(
-            f"""
+        # placeholders is only ever "?,?,...", one per item in `criteria` — no
+        # external/user data is interpolated into the query string itself.
+        query = f"""
             SELECT
                 a.id AS assistant_id,
                 a.session_id,
@@ -362,9 +363,8 @@ class Database:
               ) < ?
             ORDER BY a.id DESC
             LIMIT ?
-            """,
-            (*criteria, len(criteria), limit),
-        ) as cur:
+            """  # nosec B608 — placeholders is a fixed "?" sequence, not user input
+        async with self._conn.execute(query, (*criteria, len(criteria), limit)) as cur:
             rows = await cur.fetchall()
         turns = [
             {

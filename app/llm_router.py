@@ -73,7 +73,7 @@ class AllProvidersFailed(RuntimeError):
         self.last_phase = last_phase
 
 
-async def stream_completion(
+async def stream_completion(  # noqa: C901, PLR0915 — orchestrates provider fallback + token aggregation; splitting hurts readability
     messages: list[dict],
     providers: list[str],
     *,
@@ -130,7 +130,9 @@ async def stream_completion(
         first_chunk_ok = False
         try:
             yield {"type": "start", "model": model}
-            async for chunk in stream:
+            # litellm.acompletion(stream=True) returns CustomStreamWrapper,
+            # but the union type with ModelResponse is not iterable in pyright's view.
+            async for chunk in stream:  # pyright: ignore[reportGeneralTypeIssues]  # LiteLLM stubs union
                 first_chunk_ok = True
                 token, p_tok, c_tok = _extract_chunk(chunk)
                 if p_tok:
@@ -184,7 +186,7 @@ async def stream_completion(
     raise AllProvidersFailed(f"all providers failed: attempts={attempts} last_err={last_err!r}")
 
 
-async def complete_once(
+async def complete_once(  # noqa: C901, PLR0915 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
     messages: list[dict],
     providers: list[str],
     *,

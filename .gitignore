@@ -10,6 +10,8 @@ env/
 .pytest_cache/
 .ruff_cache/
 .coverage
+.coverage_html/
+coverage.xml
 htmlcov/
 .mypy_cache/
 .tox/

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 
 
-def extract_json_object(text: str) -> str:
+def extract_json_object(text: str) -> str:  # noqa: C901 — TODO: reduzir complexidade — débito pré-existente, fora do escopo deste PR
     """Pull the first balanced ``{...}`` block out of ``text``.
 
     Models routinely wrap the JSON in a prose preamble ("Here is the JSON
