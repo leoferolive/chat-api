@@ -159,6 +159,13 @@ grafana:
   # Singular `envFromSecret`; chart also accepts plural `envFromSecrets: [...]`.
   # Stick with singular here — all keys (only GF_DATABASE_PASSWORD today) become env vars.
   envFromSecret: grafana-postgres
+  # Senhas read-only dos datasources Postgres de negócio (Fase 0 dos
+  # dashboards). Cada Secret expõe uma env var consumida por
+  # secureJsonData.password nos additionalDataSources abaixo. Criados
+  # out-of-band — ver README "Datasources Postgres read-only".
+  envFromSecrets:
+    - name: grafana-ds-nossalista
+    - name: grafana-ds-nossagrana
 
   ingress:
     enabled: true
@@ -179,6 +186,49 @@ grafana:
     datasources:
       enabled: true
       searchNamespace: ALL
+
+  # Datasources Postgres read-only para métricas de NEGÓCIO (SQL direto).
+  # Mergeados pelo chart no provisioning de datasources (mesmo arquivo do
+  # Prometheus/Alertmanager default). uid fixo: os dashboards das Fases 1-2
+  # referenciam estes uids. Apontam para o Postgres compartilhado in-cluster.
+  # NOTA (Fase 0): nossalista E nossagrana_prod vivem no MESMO Postgres
+  # compartilhado (postgres.database.svc.cluster.local). Não existe Postgres
+  # dedicado para nossagrana no cluster — o app nossagrana o acessa via
+  # NodePort (Service postgres-nodeport no ns database). Servidor é PG 17.
+  # Senha vem das env vars injetadas via envFromSecrets (Secrets do monitoring).
+  additionalDataSources:
+    - name: "PostgreSQL nossalista (ro)"
+      type: postgres
+      uid: nossalista-pg
+      url: postgres.database.svc.cluster.local:5432
+      access: proxy
+      user: grafana_ro
+      jsonData:
+        database: nossalista
+        sslmode: disable
+        postgresVersion: 1700
+        timescaledb: false
+        maxOpenConns: 5
+        maxIdleConns: 2
+        connMaxLifetime: 14400
+      secureJsonData:
+        password: "$__env{GF_DS_NOSSALISTA_PASSWORD}"
+    - name: "PostgreSQL nossagrana (ro)"
+      type: postgres
+      uid: nossagrana-pg
+      url: postgres.database.svc.cluster.local:5432
+      access: proxy
+      user: grafana_ro
+      jsonData:
+        database: nossagrana_prod
+        sslmode: disable
+        postgresVersion: 1700
+        timescaledb: false
+        maxOpenConns: 5
+        maxIdleConns: 2
+        connMaxLifetime: 14400
+      secureJsonData:
+        password: "$__env{GF_DS_NOSSAGRANA_PASSWORD}"
 
   # No SQLite, no need for the local PVC. The container still mounts an
   # emptyDir at /var/lib/grafana for plugin/cache scratch.
