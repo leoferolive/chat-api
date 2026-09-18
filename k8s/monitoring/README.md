@@ -237,6 +237,26 @@ kubectl apply -f k8s/monitoring/prometheusrules/nossagrana.yaml
 > (deploy da app) e do scrape via ServiceMonitor. Ficam "No data" até a app ser
 > re-deployada com a instrumentação Prometheus.
 
+## Dashboard nossalista
+
+Operacional via Prometheus (datasource `prometheus`) + negócio via Postgres
+read-only (datasource `nossalista-pg`). O ServiceMonitor scrapeia
+`/actuator/prometheus` (porta `http` do Service `nossalista`).
+
+```bash
+# Importar / atualizar o dashboard nossalista (sidecar auto-detecta via label)
+kubectl create configmap nossalista-dashboard \
+  -n monitoring \
+  --from-file=nossalista.json=k8s/monitoring/dashboards/nossalista.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl label configmap nossalista-dashboard \
+  -n monitoring grafana_dashboard=1 --overwrite
+
+# Aplicar ServiceMonitor (+ PrometheusRule, se presente)
+kubectl apply -f k8s/nossalista/servicemonitor.yaml
+kubectl apply -f k8s/nossalista/prometheusrule.yaml
+```
+
 ## Verificação
 
 ```bash
