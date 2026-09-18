@@ -21,5 +21,8 @@ ALTER ROLE grafana_ro WITH LOGIN PASSWORD :'pw';
 GRANT CONNECT ON DATABASE nossagrana_prod TO grafana_ro;
 GRANT USAGE ON SCHEMA public TO grafana_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+-- FOR ROLE nossagrana_prod: sem isso, o DEFAULT PRIVILEGE só se aplicaria a
+-- objetos criados pela role que roda este script (ex.: root), não pelo owner
+-- real das tabelas do app (POSTGRES_USER=nossagrana_prod).
+ALTER DEFAULT PRIVILEGES FOR ROLE nossagrana_prod IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM grafana_ro;

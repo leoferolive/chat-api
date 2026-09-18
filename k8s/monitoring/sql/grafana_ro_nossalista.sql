@@ -17,8 +17,11 @@ ALTER ROLE grafana_ro WITH LOGIN PASSWORD :'pw';
 GRANT CONNECT ON DATABASE nossalista TO grafana_ro;
 GRANT USAGE ON SCHEMA public TO grafana_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
--- Tabelas criadas no futuro (migrations) ficam legíveis automaticamente:
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+-- Tabelas criadas no futuro (migrations) ficam legíveis automaticamente.
+-- FOR ROLE nossalista: sem isso, o DEFAULT PRIVILEGE só se aplicaria a objetos
+-- criados pela role que roda este script (ex.: root), não pelo owner real das
+-- tabelas do app (as migrations do nossalista rodam com DATABASE_USER=nossalista).
+ALTER DEFAULT PRIVILEGES FOR ROLE nossalista IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
 
 -- Garantia explícita de que NÃO há escrita (revoga heranças de PUBLIC, se houver):
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM grafana_ro;
