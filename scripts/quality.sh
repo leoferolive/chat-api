@@ -25,11 +25,17 @@ pip_audit_check() {
     tmp="$(mktemp -t pipaudit-XXXXXX.txt)"
     uv export --format requirements-txt --no-emit-project --no-hashes > "$tmp"
     uv run pip-audit --strict --disable-pip --no-deps -r "$tmp" \
-        --ignore-vuln PYSEC-2026-1325
+        --ignore-vuln PYSEC-2026-1325 \
+        --ignore-vuln PYSEC-2026-4298
         # ^ ecdsa (transitivo via python-jose[cryptography]): sem fix version —
         # timing attack (Minerva) em assinatura/verificação ECDSA, upstream não
         # corrigiu. app/guards.py só usa jwt.encode/decode com HS256 (HMAC
         # simétrico) — o backend ecdsa nunca é exercitado neste código.
+        # ^ python-jose 3.5.0 (PYSEC-2026-4298): sem fix version. O ataque exige
+        # que o serviço valide HS256 usando uma chave PÚBLICA assimétrica como
+        # segredo HMAC; app/guards.py usa segredo simétrico (SESSION_SECRET) e
+        # decode com algorithms=["HS256"] explícito — não exploitável aqui.
+        # Reavaliar ao trocar python-jose por PyJWT.
     rc=$?
     rm -f "$tmp"
     return $rc

@@ -246,3 +246,41 @@ async def test_complete_once_passes_response_format(monkeypatch) -> None:
     )
     assert captured["response_format"] == {"type": "json_object"}
     assert captured["stream"] is False
+
+
+# ---- LiteLLM proxy gateway --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "model", ["openrouter/google/gemini-2.5-flash-lite", "gemini/gemini-2.5-flash", "zai/glm-4.6"]
+)
+@pytest.mark.usefixtures("_reset_settings")
+def test_proxy_routes_every_provider_through_gateway(
+    model: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With LITELLM_PROXY_URL set, the model string becomes the proxy alias."""
+    from app import config as config_mod
+    from app.llm_router import provider_kwargs
+
+    monkeypatch.setenv("LITELLM_PROXY_URL", "http://litellm.ai.svc.cluster.local:4000")
+    monkeypatch.setenv("LITELLM_PROXY_KEY", "sk-proxy")
+    config_mod.reset_settings_cache()
+
+    assert provider_kwargs(model) == (
+        f"openai/{model}",
+        {"api_base": "http://litellm.ai.svc.cluster.local:4000", "api_key": "sk-proxy"},
+    )
+
+
+@pytest.mark.usefixtures("_reset_settings")
+def test_without_proxy_openrouter_stays_direct(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import config as config_mod
+    from app.llm_router import provider_kwargs
+
+    monkeypatch.delenv("LITELLM_PROXY_URL", raising=False)
+    config_mod.reset_settings_cache()
+
+    assert provider_kwargs("openrouter/google/gemini-2.5-flash-lite") == (
+        "openrouter/google/gemini-2.5-flash-lite",
+        {},
+    )

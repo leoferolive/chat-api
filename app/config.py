@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     zai_api_key: str | None = Field(default=None)
     zai_base_url: str = "https://api.z.ai/api/paas/v4/"
 
+    # LiteLLM proxy (gateway). When set, every provider call goes through it as
+    # an OpenAI-compatible endpoint; the model string from LLM_PROVIDERS is
+    # used verbatim as the proxy's model alias, so metrics/cost keep their keys.
+    litellm_proxy_url: str | None = Field(default=None)
+    litellm_proxy_key: str | None = Field(default=None)
+
+    # JSON map of proxy alias -> US$ per 1M tokens, e.g.
+    # {"company-code": {"input": 0.3, "output": 1.2}}. LiteLLM has no pricing
+    # for the proxy's aliases, so cost.py prices them from this table.
+    llm_alias_pricing: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

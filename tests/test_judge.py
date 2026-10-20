@@ -51,7 +51,7 @@ class _FakeLiteLLM:
     async def __call__(self, *, model, messages, **kwargs):
         prompt = messages[0]["content"]
         criterion = next((c for c in CRITERIA if f"**{c}**" in prompt), "relevance")
-        self.calls.append({"model": model, "criterion": criterion})
+        self.calls.append({"model": model, "criterion": criterion, **kwargs})
         if criterion in self.raise_for:
             raise RuntimeError(f"forced failure for {criterion}")
         body = self.responses[criterion]
@@ -188,3 +188,22 @@ async def test_metrics_judge_endpoint_aggregates(client) -> None:
 async def test_metrics_judge_endpoint_external_host_404(client) -> None:
     resp = await client.get("/metrics-judge", headers={"host": "chat-dev.leoferolive.com.br"})
     assert resp.status_code == 404
+
+
+@pytest.mark.usefixtures("_reset_settings")
+def test_judge_uses_proxy_kwargs(monkeypatch: pytest.MonkeyPatch, fake_llm) -> None:
+    import asyncio
+
+    from app import config as config_mod
+    from app.judge.runner import _score_one
+
+    monkeypatch.setenv("LITELLM_PROXY_URL", "http://proxy:4000")
+    monkeypatch.setenv("LITELLM_PROXY_KEY", "sk-proxy")
+    config_mod.reset_settings_cache()
+
+    asyncio.run(
+        _score_one(criterion="relevance", question="q", answer="a", judge_model="openrouter/x/y")
+    )
+    call = fake_llm.calls[-1]
+    assert call["model"] == "openai/openrouter/x/y"
+    assert call["api_base"] == "http://proxy:4000"

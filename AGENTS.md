@@ -1,7 +1,7 @@
 # chat-api · AGENTS.md
 
 Backend para o chat com IA do `leoferolive.com.br`. FastAPI + LiteLLM,
-deploy K3s no Raspberry Pi (mesmo cluster do site).
+deploy K3s num servidor amd64 (mesmo cluster do site).
 
 ## Sempre
 
@@ -52,6 +52,9 @@ k8s/{prod,dev}/    manifests K3s
   (`gemini/gemini-2.5-flash`, `openrouter/anthropic/claude-haiku-4.5`,
   `zai/glm-4.7-flash`). O prefixo `zai/` e tratado em `llm_router.py` como
   OpenAI-compatible com `api_base = ZAI_BASE_URL`.
+- Aliases do proxy (`company-code`, `company-reasoning`): o custo e estimado
+  via `LLM_ALIAS_PRICING` (US$/1M tokens; o LiteLLM nao tem preco para eles)
+  e o failover entre providers e do LiteLLM proxy, nao do app.
 - Guard order em `/chat/stream`: Turnstile (1a msg) → slowapi rate limit
   → cost gate diario → handler.
 - Logs: `structlog` JSON em prod. Nao logar conteudo de mensagens; apenas
@@ -175,8 +178,8 @@ Espelha o site (`leoferolive.com.br`). Decisoes:
   nao precisa registrar hostname novo no tunnel (se for ALB explicito,
   ver `docs/deploy-guide` do site).
 - **Imagens:** GHCR `ghcr.io/leoferolive/chat-api` e
-  `ghcr.io/leoferolive/chat-api-dev`. Build em runner `ubuntu-24.04-arm`
-  para nativo arm64 (Raspberry Pi).
+  `ghcr.io/leoferolive/chat-api-dev`. Build em runner `ubuntu-latest`
+  (imagem `linux/amd64`).
 - **Wiki:** PVC `chat-api-wiki` (5Gi). Init container `wiki-clone` (imagem
   `alpine/git`) faz `git clone --depth 1` no primeiro start e
   `git pull --depth 1 --ff-only` em starts subsequentes. Repositorio
@@ -188,7 +191,7 @@ Espelha o site (`leoferolive.com.br`). Decisoes:
 - **DB:** PVC `chat-api-db` (1Gi). Mounta em `/data`. Sem backup
   automatizado por enquanto (TODO em Fase 5).
 - **Recursos:** 100m/256Mi requests, 500m/512Mi limits. 1 replica
-  (Raspberry Pi).
+  (nó único).
 - **Strategy:** `Recreate` (PVCs sao RWO; nao queremos dois pods
   competindo pela DB).
 
@@ -200,7 +203,7 @@ Espelha o site (`leoferolive.com.br`). Decisoes:
 | `release.yml` | `ci` success em main | tag `vX.Y.Z` + GitHub Release + dev deploy |
 | `deploy-branch-dev.yml` | manual `gh workflow run -f ref=<ref>` | tag `vX.Y.Z-rc.<sha>` + dev deploy |
 | `deploy-prod.yml` | manual `gh workflow run -f tag=vX.Y.Z` | approval gate `production` + prod deploy |
-| `deploy-environment.yml` | reusable | build arm64 → push GHCR → kubectl apply → set image → rollout → smoke /healthz |
+| `deploy-environment.yml` | reusable | build amd64 → push GHCR → kubectl apply → set image → rollout → smoke /healthz |
 
 ## Atualizacao da wiki
 
@@ -277,5 +280,5 @@ Secrets do GitHub Actions (settings → secrets and variables → actions):
 
 - Helm / Kustomize / ArgoCD (overkill enquanto for um servico).
 - Backup automatizado da DB SQLite (Fase 5).
-- HPA / multi-replica (PVC RWO impede; e o Pi nao aguenta mesmo).
+- HPA / multi-replica (PVC RWO impede; e o nó único não justifica).
 - mTLS interno (Cloudflare Tunnel cobre o perimetro).

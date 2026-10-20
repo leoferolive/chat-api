@@ -29,16 +29,24 @@ from .metrics import (
 logger = structlog.get_logger(__name__)
 
 
-def _provider_kwargs(model: str) -> tuple[str, dict]:
+def provider_kwargs(model: str) -> tuple[str, dict]:
     """Translate `<prefix>/<model>` into LiteLLM call kwargs.
 
     Most providers Just Work via their own prefix (`gemini/`, `openrouter/`).
     For OpenAI-compatible endpoints we expose explicit prefixes that point
     LiteLLM at the right base url + api key.
 
+    When ``LITELLM_PROXY_URL`` is set, every model is routed through the proxy
+    using its full string as the alias (aliases must exist on the proxy).
+
     Returns the (model_string_passed_to_litellm, extra_kwargs).
     """
     settings = get_settings()
+    if settings.litellm_proxy_url:
+        return f"openai/{model}", {
+            "api_base": settings.litellm_proxy_url,
+            "api_key": settings.litellm_proxy_key or "",
+        }
     if model.startswith("zai/"):
         bare = model[len("zai/") :]
         return f"openai/{bare}", {
@@ -101,7 +109,7 @@ async def stream_completion(  # noqa: C901, PLR0915 — orchestrates provider fa
 
     for model in providers:
         attempts.append(model)
-        litellm_model, extra = _provider_kwargs(model)
+        litellm_model, extra = provider_kwargs(model)
         # Reset per-provider so failover time of earlier providers doesn't
         # pollute the latency observed for the one that actually streamed.
         started = time.monotonic()
@@ -217,7 +225,7 @@ async def complete_once(  # noqa: C901, PLR0915 — TODO: reduzir complexidade �
 
     for model in providers:
         attempts.append(model)
-        litellm_model, extra = _provider_kwargs(model)
+        litellm_model, extra = provider_kwargs(model)
         # Same per-provider reset as stream_completion.
         started = time.monotonic()
         kwargs: dict = {

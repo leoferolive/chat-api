@@ -35,7 +35,7 @@ spec:
             - name: judge
               image: ghcr.io/leoferolive/chat-api:latest
               imagePullPolicy: Always
-              command: ["python", "-m", "app.judge.cli", "--once", "--limit", "100"]
+              command: ["python", "-m", "app.judge.cli", "--once", "--limit", "100", "--model", "company-reasoning"]
               envFrom:
                 - configMapRef:
                     name: chat-api-config
