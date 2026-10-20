@@ -23,7 +23,7 @@ data:
   # Alias no LiteLLM proxy (chat + router); judge usa company-reasoning.
   LLM_PROVIDERS: "company-code"
   # US$/1M tokens por alias do proxy (ajustar aos preços reais).
-  LLM_ALIAS_PRICING: '{"company-code":{"input":0,"output":0},"company-reasoning":{"input":0,"output":0}}'
+  LLM_ALIAS_PRICING: '{"company-code":{"input":0.10,"output":0.50},"company-reasoning":{"input":2.00,"output":10.00}}'
   LITELLM_PROXY_URL: "http://litellm.ai.svc.cluster.local:4000"
   ZAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4/"
   WIKI_POLL_SECONDS: "60"
