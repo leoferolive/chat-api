@@ -24,9 +24,16 @@ def provider_of(model: str) -> str:
     ``openrouter/google/gemini-2.5-flash-lite`` -> ``openrouter``
     ``gemini/gemini-2.5-flash``                 -> ``gemini``
     ``zai/glm-4.6``                             -> ``zai``
+    ``company-code`` (alias do proxy)           -> ``litellm-proxy``
     ``gpt-4o``                                  -> ``openai`` (default)
+
+    Sem prefixo, o modelo passa pelo LiteLLM proxy quando ele está
+    configurado (``LITELLM_PROXY_URL``) ou quando é um alias com preço em
+    ``LLM_ALIAS_PRICING``.
     """
     if "/" not in model:
+        if get_settings().litellm_proxy_url or _alias_pricing(model) is not None:
+            return "litellm-proxy"
         return "openai"
     return model.split("/", 1)[0]
 
@@ -90,6 +97,10 @@ def compute_cost(
         except Exception as exc:  # noqa: BLE001 — pricing is best-effort
             last_err = exc
             continue
-        return float((prompt_cost or 0.0) + (completion_cost or 0.0))
+        total = float((prompt_cost or 0.0) + (completion_cost or 0.0))
+        # LiteLLM devolve (0, 0) (sem exceção) para modelos fora do mapa, como
+        # openrouter/google/*: total 0 é "preço desconhecido", não custo zero.
+        if total > 0:
+            return total
     logger.debug("cost_lookup_failed", model=model, err=str(last_err))
     return 0.0
