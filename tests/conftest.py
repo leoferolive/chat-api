@@ -196,3 +196,12 @@ async def client(settings: Settings, mock_llm: MockState) -> AsyncIterator[Async
             yield c
     finally:
         await lifespan_cm.__aexit__(None, None, None)
+
+
+@pytest.fixture
+def _reset_settings():
+    """Clear the cached Settings after a test that mutated env vars."""
+    yield
+    from app import config as config_mod
+
+    config_mod.reset_settings_cache()

@@ -9,6 +9,7 @@ import structlog
 
 from ..db import Database
 from ..json_utils import parse_json_object
+from ..llm_router import provider_kwargs
 from .prompts import CRITERIA, judge_prompt
 
 logger = structlog.get_logger(__name__)
@@ -47,12 +48,14 @@ async def _score_one(
     judge_model: str,
 ) -> tuple[float, str]:
     prompt = judge_prompt(criterion=criterion, question=question, answer=answer)
+    litellm_model, extra = provider_kwargs(judge_model)
     resp = await litellm.acompletion(
-        model=judge_model,
+        model=litellm_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=200,
         response_format={"type": "json_object"},
+        **extra,
     )
     # acompletion() is typed to return ModelResponse | CustomStreamWrapper, but
     # the latter only happens with stream=True, which we never pass here — the
