@@ -114,7 +114,7 @@ are hashed with `IP_HASH_SALT` before storage.
 
 ## Deploy
 
-K3s on a Raspberry Pi (same cluster as `leoferolive.com.br`). Cloudflare
+K3s on a single amd64 server (same cluster as `leoferolive.com.br`). Cloudflare
 Tunnel terminates TLS and routes `*.leoferolive.com.br` to Traefik in the
 cluster, so the ingress stays plain HTTP.
 
@@ -172,15 +172,15 @@ For prod, swap `dev` for `prod` and `chat-api-dev` for `chat-api`.
 - **prod:** `gh workflow run deploy-prod.yml -f tag=vX.Y.Z` (requires
   `production` environment approval).
 
-Each deploy: builds an `arm64` image, pushes to GHCR, applies manifests
+Each deploy: builds an `amd64` image, pushes to GHCR, applies manifests
 (skipping `secret.template.yaml`), `kubectl set image` to the new tag,
 waits for rollout, then curls `/healthz` for a smoke test.
 
 ### Manual deploy (no CI)
 
 ```bash
-# Build for arm64 from another machine and push:
-docker buildx build --platform linux/arm64 \
+# Build for amd64 and push:
+docker buildx build --platform linux/amd64 \
   -t ghcr.io/leoferolive/chat-api-dev:manual-$(git rev-parse --short HEAD) \
   --push .
 
