@@ -52,6 +52,9 @@ k8s/{prod,dev}/    manifests K3s
   (`gemini/gemini-2.5-flash`, `openrouter/anthropic/claude-haiku-4.5`,
   `zai/glm-4.7-flash`). O prefixo `zai/` e tratado em `llm_router.py` como
   OpenAI-compatible com `api_base = ZAI_BASE_URL`.
+- Aliases do proxy (`company-code`, `company-reasoning`): o custo e estimado
+  via `LLM_ALIAS_PRICING` (US$/1M tokens; o LiteLLM nao tem preco para eles)
+  e o failover entre providers e do LiteLLM proxy, nao do app.
 - Guard order em `/chat/stream`: Turnstile (1a msg) → slowapi rate limit
   → cost gate diario → handler.
 - Logs: `structlog` JSON em prod. Nao logar conteudo de mensagens; apenas

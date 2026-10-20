@@ -106,6 +106,7 @@ data: {"type":"error","message":"…"}
 - `RATE_LIMIT_PER_IP` (slowapi, prefers `cf-connecting-ip`).
 - `DAILY_LLM_CALL_LIMIT` daily kill-switch backed by a SQLite counter.
 - Cloudflare Turnstile on the first message of every session.
+- Custo dos aliases do proxy (`company-code`, `company-reasoning`) e estimado via `LLM_ALIAS_PRICING`; o failover entre providers fica no LiteLLM proxy.
 
 ## Persistence
 
