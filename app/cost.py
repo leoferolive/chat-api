@@ -8,8 +8,12 @@ surface that as a debug log and a 0.0 cost rather than raising.
 
 from __future__ import annotations
 
+import json
+
 import litellm
 import structlog
+
+from .config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +29,19 @@ def provider_of(model: str) -> str:
     if "/" not in model:
         return "openai"
     return model.split("/", 1)[0]
+
+
+def _alias_pricing(model: str) -> tuple[float, float] | None:
+    """(input, output) US$ per 1M tokens for a proxy alias, if configured."""
+    raw = get_settings().llm_alias_pricing
+    if not raw:
+        return None
+    try:
+        entry = json.loads(raw).get(model)
+        return (float(entry["input"]), float(entry["output"])) if entry else None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        logger.warning("alias_pricing_invalid")
+        return None
 
 
 def _pricing_candidates(model: str) -> list[str]:
@@ -59,6 +76,9 @@ def compute_cost(
     """USD cost for a single LLM call. Returns 0.0 if pricing is unknown."""
     if not prompt_tokens and not completion_tokens:
         return 0.0
+    alias = _alias_pricing(model)
+    if alias is not None:
+        return (prompt_tokens * alias[0] + completion_tokens * alias[1]) / 1_000_000
     last_err: Exception | None = None
     for candidate in _pricing_candidates(model):
         try:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.cost import compute_cost, provider_of
 
 
@@ -45,3 +47,27 @@ def test_cost_truly_unknown_openrouter_model_returns_zero() -> None:
     # No fallback possible (no native pricing) → 0.0 silently.
     cost = compute_cost("openrouter/imaginary/model-x", 1000, 500)
     assert cost == 0.0
+
+
+def test_cost_from_alias_pricing(monkeypatch) -> None:
+    """Proxy aliases are priced from LLM_ALIAS_PRICING (US$ per 1M tokens)."""
+    from app import config as config_mod
+
+    monkeypatch.setenv("LLM_ALIAS_PRICING", '{"company-code": {"input": 0.30, "output": 1.20}}')
+    config_mod.reset_settings_cache()
+    try:
+        assert compute_cost("company-code", 1_000_000, 500_000) == pytest.approx(0.90)
+        assert compute_cost("company-reasoning", 1000, 1000) == 0.0  # not in table
+    finally:
+        config_mod.reset_settings_cache()
+
+
+def test_cost_alias_pricing_invalid_json_is_ignored(monkeypatch) -> None:
+    from app import config as config_mod
+
+    monkeypatch.setenv("LLM_ALIAS_PRICING", "not-json")
+    config_mod.reset_settings_cache()
+    try:
+        assert compute_cost("company-code", 1000, 1000) == 0.0
+    finally:
+        config_mod.reset_settings_cache()

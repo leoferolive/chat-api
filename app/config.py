@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     litellm_proxy_url: str | None = Field(default=None)
     litellm_proxy_key: str | None = Field(default=None)
 
+    # JSON map of proxy alias -> US$ per 1M tokens, e.g.
+    # {"company-code": {"input": 0.3, "output": 1.2}}. LiteLLM has no pricing
+    # for the proxy's aliases, so cost.py prices them from this table.
+    llm_alias_pricing: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
